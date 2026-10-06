@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "markdown-index document index",
+  "description": "The document index: every indexed document keyed by its UUID. Documents with no front matter land under the empty key.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/document"
+  },
+  "$defs": {
+    "document": {
+      "title": "markdown-index document",
+      "description": "One markdown file as indexed. Its identity is its UUID, not its path.",
+      "type": "object",
+      "required": [
+        "relativePath",
+        "name",
+        "modifiedUnix",
+        "metadata",
+        "frontmatter_cid",
+        "raw_markdown",
+        "raw_markdown_hash"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "description": "Path relative to the vault root, always with forward slashes."
+        },
+        "name": {
+          "type": "string",
+          "description": "File name without the .md extension."
+        },
+        "modifiedUnix": {
+          "type": "integer",
+          "description": "Last modified, as a unix timestamp in seconds."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Front matter parsed from YAML and re-encoded as JSON. Empty when the file has none.",
+          "additionalProperties": true
+        },
+        "frontmatter_cid": {
+          "type": "string",
+          "pattern": "^b[a-z2-7]+$",
+          "description": "CIDv1 (dag-json codec, sha2-256) of the front matter, base32-encoded."
+        },
+        "raw_markdown": {
+          "type": "string",
+          "description": "File content with the front matter block stripped out."
+        },
+        "raw_markdown_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Hex sha256 of raw_markdown."
+        }
+      }
+    }
+  }
+}
