@@ -1,0 +1,5 @@
+libs/*/markdown-indexer-cli
+libs/*/out.json
+libs/*/graph.json
+go.work
+go.work.sum
