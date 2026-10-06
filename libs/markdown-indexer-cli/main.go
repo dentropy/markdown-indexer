@@ -32,6 +32,7 @@ type options struct {
 	wikilinks  bool
 	force      bool
 	vaultCheck bool
+	quiet      bool
 }
 
 // filterSharedDocs narrows the document set to the ones the CLI is allowed to
@@ -71,7 +72,16 @@ func runWith(args []string, stdout, stderr io.Writer, stdin io.Reader) error {
 		return vaultCheck(opts, stderr)
 	}
 
-	ix, err := scanVault(opts, stderr)
+	// -quiet silences the progress notices that share a stream with the index,
+	// so stdout can be piped straight into jq. It never silences a fatal error:
+	// those are returned and printed by main, and -vaultcheck reports on stderr
+	// because that report is its output.
+	notices := stderr
+	if opts.quiet {
+		notices = io.Discard
+	}
+
+	ix, err := scanVault(opts, notices)
 	if err != nil {
 		return err
 	}
@@ -83,7 +93,7 @@ func runWith(args []string, stdout, stderr io.Writer, stdin io.Reader) error {
 		if err := stripDuplicateFrontMatter(docs, opts.dir, opts.idKey, stdin, stderr); err != nil {
 			return err
 		}
-		ix, err = scanVault(opts, stderr)
+		ix, err = scanVault(opts, notices)
 		if err != nil {
 			return err
 		}
@@ -116,7 +126,7 @@ func runWith(args []string, stdout, stderr io.Writer, stdin io.Reader) error {
 		if opts.force {
 			docs = filterMarshalable(docs, func(d markdownindexer.Document) string {
 				return d.RelativePath
-			}, stderr)
+			}, notices)
 		}
 		if err := enc.Encode(documentsIndex(docs)); err != nil {
 			return fmt.Errorf("encode documents: %w", err)
@@ -125,14 +135,14 @@ func runWith(args []string, stdout, stderr io.Writer, stdin io.Reader) error {
 
 	if opts.memUsage {
 		bytesUsed := documentsMemoryUsage(docs)
-		fmt.Fprintf(stderr, "documents memory usage: %d bytes (%s)\n", bytesUsed, formatBytes(bytesUsed))
+		fmt.Fprintf(notices, "documents memory usage: %d bytes (%s)\n", bytesUsed, formatBytes(bytesUsed))
 	}
 
 	if opts.checkDup {
 		ix := &markdownindexer.Index{Documents: docs}
 		dups := ix.DuplicateUUIDs()
 		for _, id := range dups {
-			fmt.Fprintf(stderr, "duplicate UUID %s -> %s\n", id, strings.Join(ix.PathsForID(id), ", "))
+			fmt.Fprintf(notices, "duplicate UUID %s -> %s\n", id, strings.Join(ix.PathsForID(id), ", "))
 		}
 		if len(dups) > 0 {
 			return fmt.Errorf("found %d duplicate UUID(s): %s", len(dups), strings.Join(dups, ", "))
@@ -201,6 +211,8 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&opts.wikilinks, "wikilinks", false, "output a JSON graph of wikilinks instead of the document index")
 	fs.BoolVar(&opts.force, "force", false, "skip documents with broken front matter and index the rest instead of aborting")
 	fs.BoolVar(&opts.force, "F", false, "shorthand for -force")
+	fs.BoolVar(&opts.quiet, "quiet", false, "print only the JSON, suppressing progress notices on stderr")
+	fs.BoolVar(&opts.quiet, "q", false, "shorthand for -quiet")
 	fs.BoolVar(&opts.vaultCheck, "vaultcheck", false, "check the vault for broken front matter and duplicate UUIDs, then exit non-zero if any are found")
 	if err := fs.Parse(args); err != nil {
 		return options{}, err

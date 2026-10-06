@@ -47,6 +47,7 @@ non-zero. Every operation is a one-shot scan; there is no daemon and no database
 | `-checkdups` | `false`    | Report documents sharing a UUID, after writing the index       |
 | `-stripdups` | `false`    | Assign a fresh UUID to every document sharing one (prompts)    |
 | `-force`/`-F`| `false`    | Skip documents with broken front matter instead of aborting    |
+| `-quiet`/`-q`| `false`    | Print only the JSON, with no progress notices on stderr        |
 | `-memusage`  | `false`    | Print an estimate of the memory the document slice occupies    |
 
 ## Share filtering
@@ -175,6 +176,21 @@ skipping vault/broken-frontmatter.md: parse front matter: yaml: line 1: did not 
 
 `-force` also covers the output phase itself: a document that fails to serialize
 is dropped and logged rather than aborting, so the JSON stays valid.
+
+## Piping the JSON
+
+Each skipped file is reported on stderr, so the JSON on stdout is already clean
+and pipes into `jq` on its own. `-quiet` (or `-q`) drops those notices when you
+would rather not see them:
+
+```sh
+$ markdown-indexer-cli -dir . -all -force | jq '.[] | .name'
+$ markdown-indexer-cli -dir . -all -force -q | jq '.[] | .name'
+```
+
+`-quiet` suppresses progress notices only. A run that fails still says so on
+stderr and still exits non-zero, and `-vaultcheck` still reports normally,
+because there the report *is* the output.
 
 ## The library dependency
 

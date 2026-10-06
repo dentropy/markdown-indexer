@@ -90,6 +90,35 @@ line per file.
 ./markdown-indexer-cli -dir testdata/vault -force -all | jq -r 'keys[]'
 ```
 
+#### Quiet output
+
+Each skipped file is reported on stderr, so stdout is clean JSON without any
+extra flags. `-quiet` (`-q`) silences the notices.
+
+``` bash
+# The notice is on stderr, so this already works.
+./markdown-indexer-cli -dir testdata -force -all | jq -r 'keys | length'
+
+# Same result, no notice.
+./markdown-indexer-cli -dir testdata -force -all -q | jq -r 'keys | length'
+
+# Nothing at all on stderr under -q.
+./markdown-indexer-cli -dir testdata -force -all -q 2>&1 >/dev/null | wc -c
+```
+
+Check the three cases that `-q` must not break. A fatal error still fails, with
+the file named:
+
+``` bash
+./markdown-indexer-cli -dir testdata/vault -q; echo "exit=$?"
+```
+
+`-vaultcheck` still reports, because its report is the output:
+
+``` bash
+./markdown-indexer-cli -dir testdata/vault -vaultcheck -q; echo "exit=$?"
+```
+
 #### Memory estimate
 
 ``` bash

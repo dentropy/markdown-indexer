@@ -385,6 +385,89 @@ func TestRunWithForceDocumentJSON(t *testing.T) {
 	}
 }
 
+func TestRunWithQuietSuppressesNotices(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "good.md", "---\nuuid: 11111111-1111-1111-1111-111111111111\nshare: true\n---\n\nGood.\n")
+	writeTestMD(t, dir, "broken.md", "---\ntitle: [unclosed\n---\n\nBroken.\n")
+
+	var stdout, stderr strings.Builder
+	err := runWith([]string{"-dir", dir, "-force", "-quiet"}, &stdout, &stderr, strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("quiet should write no notices to stderr, got: %q", stderr.String())
+	}
+
+	// The point of the flag: stdout is a JSON document with nothing mixed in.
+	var docs map[string]markdownindexer.Document
+	if err := json.Unmarshal([]byte(stdout.String()), &docs); err != nil {
+		t.Fatalf("quiet should still write valid JSON: %v\nstdout: %s", err, stdout.String())
+	}
+	if len(docs) != 1 {
+		t.Errorf("quiet should not change what is indexed, got %d documents", len(docs))
+	}
+}
+
+func TestRunWithQShorthandMatchesQuiet(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "broken.md", "---\ntitle: [unclosed\n---\n\nBroken.\n")
+
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-force", "-q"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("-q should behave like -quiet, got: %q", stderr.String())
+	}
+}
+
+// Quiet must never hide why a run failed: a broken vault with no -force is a
+// fatal error, returned and printed by main, not a notice.
+func TestRunWithQuietKeepsFatalErrors(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "broken.md", "---\ntitle: [unclosed\n---\n\nBroken.\n")
+
+	var stdout, stderr strings.Builder
+	err := runWith([]string{"-dir", dir, "-quiet"}, &stdout, &stderr, strings.NewReader(""))
+	if err == nil {
+		t.Fatal("quiet should not turn a fatal error into a success")
+	}
+	if !strings.Contains(err.Error(), "broken.md") {
+		t.Errorf("error should still name the broken file, got: %v", err)
+	}
+}
+
+// -vaultcheck reports on stderr because that report is its output, so -quiet
+// leaves it alone.
+func TestRunWithQuietKeepsVaultCheckReport(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "a.md", "---\nuuid: 33333333-3333-3333-3333-333333333333\n---\n\nA.\n")
+	writeTestMD(t, dir, "b.md", "---\nuuid: 33333333-3333-3333-3333-333333333333\n---\n\nB.\n")
+
+	var stdout, stderr strings.Builder
+	err := runWith([]string{"-dir", dir, "-vaultcheck", "-quiet"}, &stdout, &stderr, strings.NewReader(""))
+	if err == nil {
+		t.Fatal("want a non-nil error for a vault with duplicate UUIDs")
+	}
+	if !strings.Contains(stderr.String(), "duplicate UUID") {
+		t.Errorf("vaultcheck report should survive quiet, got: %q", stderr.String())
+	}
+}
+
+func TestRunWithQuietSuppressesMemUsage(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "good.md", "---\nuuid: 11111111-1111-1111-1111-111111111111\nshare: true\n---\n\nGood.\n")
+
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-memusage", "-quiet"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("quiet should suppress the memory report too, got: %q", stderr.String())
+	}
+}
+
 func TestRunWithDocumentJSONFailsWithoutForce(t *testing.T) {
 	dir := t.TempDir()
 	writeTestMD(t, dir, "good.md", "---\nuuid: 11111111-1111-1111-1111-111111111111\n---\n\nGood.\n")
