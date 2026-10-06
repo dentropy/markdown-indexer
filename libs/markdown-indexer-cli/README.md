@@ -67,8 +67,10 @@ Pass `-all` to load the whole vault.
 This differs from the library, where `markdownindexer.Options{}.Shared` is **off** by
 default. The CLI opts into the shared filter; the library does not.
 
-The structural commands ignore the lens: `-vaultcheck` and `-stripdups` operate
-on the whole vault, so CI still sees problems in documents that are not shared.
+The structural commands mostly ignore the lens: `-vaultcheck` and `-stripdups`
+operate on the whole vault, so CI still sees problems in documents that are not
+shared. `-checkdups` is the exception: it reports on what was indexed, so it
+needs `-all` to see unshared documents.
 
 ## Document JSON list
 
@@ -192,6 +194,205 @@ $ markdown-indexer-cli -dir . -all -force -q | jq '.[] | .name'
 stderr and still exits non-zero, and `-vaultcheck` still reports normally,
 because there the report *is* the output.
 
+## Examples
+
+The commands below run against the two fixture trees in this repo:
+
+- `testdata/vault/` — a realistic vault. Folders, people, projects, tags, both
+  `INTERNAL` and `WEBSITE` wikilinks, a deliberately duplicated UUID pair
+  (`duplicate-a.md`, `duplicate-b.md`), and one file with broken front matter
+  (`broken-frontmatter.md`). Most examples use this, and pass `-F` to get past
+  the broken file.
+- `examples/` — four small files for the basics. Note it contains an
+  intentional duplicate UUID, so `a/b/post.md` loses its key to
+  `duplicate.md` and disappears from the index. Use `testdata/vault` when you
+  want every file to appear.
+
+Build the binary once and call it `markdown-indexer-cli` below:
+
+```sh
+go build -o markdown-indexer-cli .
+```
+
+### Basic index
+
+```sh
+# Every document, as JSON on stdout.
+markdown-indexer-cli -dir testdata/vault -F -all > vault.json
+
+# Just the shared documents (the default).
+markdown-indexer-cli -dir testdata/vault -F > shared.json
+
+# One file per pattern, relative to -dir.
+markdown-indexer-cli -dir testdata/vault -pattern 'People/*.md' -F -all
+```
+
+### Jumping straight to jq
+
+`-F` gets you past the broken file, `-q` keeps the notices off your terminal.
+Together they give you clean JSON to work with:
+
+```sh
+# How many documents indexed.
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq 'length'
+
+# Every path.
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[].relativePath'
+
+# Name, title, and tags as a table.
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[] | [.name, .metadata.title, (.metadata.tags|tostring)] | @tsv'
+```
+
+### `-F` on its own versus `-F -q`
+
+The only difference is stderr. Both give identical stdout:
+
+```sh
+# You see: skipping vault/broken-frontmatter.md: parse front matter: ...
+markdown-indexer-cli -dir testdata/vault -F -all | jq 'length'
+
+# You see nothing; stdout is the same 24 documents.
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq 'length'
+```
+
+`-F` alone is right when you want to know a file was skipped. `-F -q` is right
+when you are piping. To keep the notice but still capture it:
+
+```sh
+markdown-indexer-cli -dir testdata/vault -F -all 2>skipped.txt | jq 'length'
+```
+
+### Querying front matter
+
+Front matter arrives under `metadata`, as whatever the YAML was. Because vaults
+disagree about shapes, defensive `jq` tends to pay off:
+
+```sh
+# Titles, sorted. The select drops files with no front matter at all, whose
+# title comes through as null.
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.title) | .metadata.title] | sort | .[]'
+
+# One document by title.
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r 'to_entries[] | select(.value.metadata.title == "Ada Lovelace") | .key'
+
+# Slug built from the title.
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.title) | .metadata.title | ascii_downcase | gsub(" "; "-")'
+
+# Drafts, and anything unpublished.
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.draft == true) | .relativePath'
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.published == false) | .relativePath'
+
+# Tags written as a YAML list and as a comma-separated string, folded together.
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.tags) | .metadata.tags | if type == "array" then .[] else (gsub(", *";"\n") | split("\n")) end] | flatten | map(select(length > 0)) | unique | sort | .[]'
+```
+
+`author` has the same problem: some files write a string, some a mapping.
+
+```sh
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.author) | .metadata.author | if type == "object" then .name else . end] | unique | sort | .[]'
+```
+
+### Finding what changed
+
+Front matter is content addressed, so its CID changes exactly when the front
+matter does. That makes the index a cheap "what did I touch" check:
+
+```sh
+# Front matter CID per document, truncated for reading.
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[] | [.relativePath, .frontmatter_cid[0:12]] | @tsv'
+
+# Documents edited since a given unix timestamp.
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r --argjson cutoff 1789000000 '.[] | select(.modifiedUnix > $cutoff) | .relativePath'
+```
+
+### Walking the wikilink graph
+
+```sh
+# Every edge as a readable line.
+markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | "\(.from_document_id[0:8]) -> \(.to_document_id[0:8])  \(.title)"'
+
+# Internal edges only; drop the WEBSITE ones.
+markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | select(.label == "INTERNAL") | .title'
+
+# Aliases that resolve: the title is the pipe alias, not the target.
+markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | select(.title | test("index"; "i")) | .title'
+
+# The most-linked-to documents, as a backlink count.
+markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '[.[] | select(.label == "INTERNAL") | .to_document_id] | group_by(.) | map({id: .[0], n: length}) | sort_by(-.n) | .[0:5][] | "\(.n)\t\(.id)"'
+
+# Documents nothing links to.
+markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks > edges.json
+markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r --slurpfile g edges.json '.[] | .key as $me | select([$g[0][] | select(.from_document_id == $me)] | length == 0) | .value.relativePath'
+```
+
+### Finding duplicates
+
+`-checkdups` reports them after writing the index, and exits non-zero, so it
+works in CI. Pass `-all`: it runs *after* the share filter, so without it the
+collisions are filtered out before it ever sees them.
+
+```sh
+# Reports the deliberate duplicate-a/duplicate-b pair. Exits 1.
+markdown-indexer-cli -dir testdata/vault -F -checkdups -all > /dev/null
+
+# Which UUIDs collide.
+markdown-indexer-cli -dir testdata/vault -F -checkdups -all 2>&1 >/dev/null | grep '^duplicate UUID'
+```
+
+`-stripdups` is the opposite: it works on the whole vault regardless of the
+filter, because a collision between two unshared documents is still a collision
+worth fixing. It rewrites front matter in place, so run it on a copy.
+
+```sh
+cp -r testdata/vault /tmp/scratch
+markdown-indexer-cli -dir /tmp/scratch -stripdups -F     # prompts; y/yes proceeds
+markdown-indexer-cli -dir /tmp/scratch -checkdups -F -all # now clean
+```
+
+### Checking the vault
+
+`-q` changes nothing here, because the report goes to stderr and is the output:
+
+```sh
+markdown-indexer-cli -dir testdata/vault -vaultcheck
+echo "exit=$?"        # 1, the vault has problems
+
+# In CI: fail the build on a broken vault.
+markdown-indexer-cli -dir testdata/vault -vaultcheck || exit 1
+
+# Only ask whether the vault is clean.
+markdown-indexer-cli -dir testdata/vault -vaultcheck 2>&1 | grep -q 'vault check: ok' && echo clean
+```
+
+### Writing somewhere other than stdout
+
+`-out` takes the JSON off your terminal, which is handy when a document body is
+large:
+
+```sh
+markdown-indexer-cli -dir testdata/vault -F -q -all -out vault.json
+
+# Then query the file directly.
+jq -r '.[].name' vault.json | sort
+```
+
+### A custom UUID key
+
+Vaults that key documents on something other than `uuid`:
+
+```sh
+markdown-indexer-cli -dir . -F -q -all -idkey id
+markdown-indexer-cli -dir . -F -q -all -idkey id | jq -r 'to_entries[] | "\(.key)  \(.value.relativePath)"'
+```
+
+### Memory footprint
+
+Useful when a vault is large enough to wonder.
+
+```sh
+markdown-indexer-cli -dir testdata/vault -F -all -memusage > /dev/null
+```
+
 ## The library dependency
 
 ```go
@@ -225,6 +426,7 @@ Manual verification steps are in [MANUAL-TESTING.md](MANUAL-TESTING.md).
 ```
 main.go              flags, orchestration, share filtering, -stripdups, JSON encoding
 main_test.go         the tests
-testdata/ examples/  fixtures
+examples/            four small files, including a deliberate duplicate UUID
+testdata/            a realistic vault, used by the tests and most examples
 MANUAL-TESTING.md    manual verification steps
 ```
