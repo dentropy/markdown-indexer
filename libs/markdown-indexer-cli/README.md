@@ -128,17 +128,17 @@ to a single entry:
 
 | Field              | Description                                                                |
 | ------------------ | -------------------------------------------------------------------------- |
-| `label`            | `INTERNAL`, `WEBSITE`, `TAG`, `FRONTMATTER_INTERNAL`, `FRONTMATTER_WEBSITE`, or `FRONTMATTER_TAG` |
+| `label`            | `INTERNAL`, `URL`, `TAG`, `FRONTMATTER_INTERNAL`, `FRONTMATTER_URL`, or `FRONTMATTER_TAG` |
 | `title`            | The pipe alias, or the raw target when there is none. For a tag, the text without `#`. For a markdown link, the link text. |
 | `from_document_id` | UUID of the document holding the reference                                 |
 | `to_document_id`   | The target's UUID when a wikilink resolves in the index, otherwise the raw target. For a tag, the tag text. |
 
-Body wikilinks starting with `http://` or `https://` are `WEBSITE`; every other
-body wikilink is `INTERNAL`. An inline `#tag` in the body is `TAG`. The same
-shapes in front matter strings use the `FRONTMATTER_` labels, and an inline
-markdown link is read only from front matter. Only documents with a non-empty
-UUID produce edges. Section anchors (`[[target#section]]`) and aliases
-(`[[target|alias]]`) are both understood.
+Body wikilinks that begin with a URL scheme (`https://`, `mailto:`, `ipfs://`)
+are `URL`; every other body wikilink is `INTERNAL`. An inline `#tag` in the body
+is `TAG`. The same shapes in front matter strings use the `FRONTMATTER_` labels,
+and an inline markdown link is read only from front matter. Only documents with
+a non-empty UUID produce edges. Section anchors (`[[target#section]]`) and
+aliases (`[[target|alias]]`) are both understood.
 
 ## Checking the vault
 
@@ -201,7 +201,7 @@ because there the report *is* the output.
 The commands below run against the two fixture trees in this repo:
 
 - `testdata/vault/` — a realistic vault. Folders, people, projects, tags, both
-  `INTERNAL` and `WEBSITE` wikilinks, a deliberately duplicated UUID pair
+  `INTERNAL` and `URL` wikilinks, a deliberately duplicated UUID pair
   (`duplicate-a.md`, `duplicate-b.md`), and one file with broken front matter
   (`broken-frontmatter.md`). Most examples use this, and pass `-F` to get past
   the broken file.
@@ -313,7 +313,7 @@ markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r --argjson cutoff 178
 # Every edge as a readable line.
 markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | "\(.from_document_id[0:8]) -> \(.to_document_id[0:8])  \(.title)"'
 
-# Internal edges only; drop the WEBSITE ones.
+# Internal edges only; drop the URL ones.
 markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | select(.label == "INTERNAL") | .title'
 
 # Aliases that resolve: the title is the pipe alias, not the target.

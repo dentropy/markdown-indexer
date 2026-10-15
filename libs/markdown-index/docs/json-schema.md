@@ -31,9 +31,9 @@ the `documents.schema.json` root is keyed by. The `$defs.document` shape is
 therefore what a single entry under that key looks like, not the envelope
 itself.
 
-`label` is an enum of six values. Body wikilinks are `INTERNAL` or `WEBSITE`.
+`label` is an enum of six values. Body wikilinks are `INTERNAL` or `URL`.
 `TAG` is an inline `#tag` in the body. Front matter strings produce
-`FRONTMATTER_INTERNAL`, `FRONTMATTER_WEBSITE`, and `FRONTMATTER_TAG` instead, so
+`FRONTMATTER_INTERNAL`, `FRONTMATTER_URL`, and `FRONTMATTER_TAG` instead, so
 they do not share an address with a body edge. `TAG` and `FRONTMATTER_TAG` store
 the text without `#` in both `title` and `to_document_id`, and neither resolves
 to a document UUID. The front matter `tags` field does not produce either label.

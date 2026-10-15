@@ -24,8 +24,11 @@ stable — read the CID when you need an address, not the loop position.
 
 Each edge's `ToDocumentID` is the target document's UUID when a wikilink resolves
 to a name in the index, and otherwise the raw target text. Only documents with a
-non-empty UUID produce edges. Body wikilinks whose targets begin `http://` or
-`https://` are labeled `WEBSITE`; every other body wikilink is `INTERNAL`.
+non-empty UUID produce edges. Body wikilinks whose targets begin with a URL
+scheme are labeled `URL`; every other body wikilink is `INTERNAL`. A scheme is
+CommonMark's absolute-URI scheme: 2–32 characters, then `:`. `https://`,
+`mailto:`, and `ipfs://` are URLs. A note title with a colon and a space
+(`[[Design: the indexer]]`) stays `INTERNAL`, as does a drive path (`C:/Users`).
 
 An inline `#tag` in the body becomes an edge labeled `TAG`. The tag text,
 without the leading `#`, is both `Title` and `ToDocumentID`. A tag is not
@@ -33,10 +36,10 @@ resolved to a document. Headings (`# Title`), fenced and inline code, and
 wikilink section anchors (`[[note#section]]`) do not produce tag edges.
 
 The same shapes in front matter strings are separate edges, labeled
-`FRONTMATTER_INTERNAL`, `FRONTMATTER_WEBSITE`, and `FRONTMATTER_TAG`. A `#name`
+`FRONTMATTER_INTERNAL`, `FRONTMATTER_URL`, and `FRONTMATTER_TAG`. A `#name`
 is read with the body tag parser. A `[[wikilink]]` uses the body rules, including
 alias, section, and name resolution. An inline markdown link `[text](destination)`
-is `FRONTMATTER_WEBSITE` when the destination begins `http://` or `https://`, and
+is `FRONTMATTER_URL` when the destination begins with a URL scheme, and
 `FRONTMATTER_INTERNAL` otherwise. Its destination is stored as written and is not
 resolved to a UUID. Image embeds (`![](...)`), reference-style links, bare URL
 fields, and a `tags` list of bare words do not produce edges. The same hit in
