@@ -670,6 +670,176 @@ func TestBuildGraphFrontMatterAndBodyStaySeparate(t *testing.T) {
 	}
 }
 
+func TestBuildGraphTagOnBothSides(t *testing.T) {
+	const fromID = "11111111-1111-1111-1111-111111111111"
+	cases := []struct {
+		name         string
+		raw          string
+		metadata     string
+		want         []Edge
+		distinctAddr bool
+	}{
+		{
+			name:         "same tag in both",
+			raw:          "See #person.",
+			metadata:     `{"see":"note #person"}`,
+			want:         []Edge{{Label: "TAG", Title: "person"}, {Label: "FRONTMATTER_TAG", Title: "person"}},
+			distinctAddr: true,
+		},
+		{
+			name:     "repeated on each side",
+			raw:      "#person #person",
+			metadata: `{"a":"#person","b":"also #person"}`,
+			want:     []Edge{{Label: "TAG", Title: "person"}, {Label: "FRONTMATTER_TAG", Title: "person"}},
+		},
+		{
+			name:     "only in front matter",
+			raw:      "No tag here.",
+			metadata: `{"see":"note #person"}`,
+			want:     []Edge{{Label: "FRONTMATTER_TAG", Title: "person"}},
+		},
+		{
+			name:     "only in the body",
+			raw:      "See #person.",
+			metadata: `{"tags":["person"],"note":"plain"}`,
+			want:     []Edge{{Label: "TAG", Title: "person"}},
+		},
+		{
+			name:     "shared plus unique",
+			raw:      "See #person and #inbox.",
+			metadata: `{"see":"note #person and #project"}`,
+			want: []Edge{
+				{Label: "TAG", Title: "person"},
+				{Label: "TAG", Title: "inbox"},
+				{Label: "FRONTMATTER_TAG", Title: "person"},
+				{Label: "FRONTMATTER_TAG", Title: "project"},
+			},
+		},
+		{
+			name:     "case differs",
+			raw:      "See #person.",
+			metadata: `{"see":"note #Person"}`,
+			want:     []Edge{{Label: "TAG", Title: "person"}, {Label: "FRONTMATTER_TAG", Title: "Person"}},
+		},
+		{
+			name:     "body hit is fenced",
+			raw:      "before\n```\n#person\n```\n",
+			metadata: `{"see":"note #person"}`,
+			want:     []Edge{{Label: "FRONTMATTER_TAG", Title: "person"}},
+		},
+		{
+			name:     "front matter hit is fenced",
+			raw:      "See #person.",
+			metadata: "{\"see\":\"```\\n#person\\n```\"}",
+			want:     []Edge{{Label: "TAG", Title: "person"}},
+		},
+		{
+			name:     "nested front matter",
+			raw:      "See #person.",
+			metadata: `{"a":{"b":["see #person"]}}`,
+			want:     []Edge{{Label: "TAG", Title: "person"}, {Label: "FRONTMATTER_TAG", Title: "person"}},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			graph := buildGraph([]Document{{
+				ID:          fromID,
+				Name:        "post",
+				RawMarkdown: c.raw,
+				Metadata:    json.RawMessage(c.metadata),
+			}})
+			if len(graph) != len(c.want) {
+				t.Fatalf("got %d edges, want %d: %+v", len(graph), len(c.want), graph)
+			}
+			seen := make(map[string]Edge, len(graph))
+			for _, e := range graph {
+				if e.FromDocumentID != fromID {
+					t.Errorf("FromDocumentID = %q, want %q", e.FromDocumentID, fromID)
+				}
+				if e.ToDocumentID != e.Title {
+					t.Errorf("ToDocumentID = %q, want title %q", e.ToDocumentID, e.Title)
+				}
+				seen[e.Label+"\x00"+e.Title] = e
+			}
+			for _, w := range c.want {
+				if _, ok := seen[w.Label+"\x00"+w.Title]; !ok {
+					t.Errorf("missing %s %q in %+v", w.Label, w.Title, graph)
+				}
+			}
+			if !c.distinctAddr {
+				return
+			}
+			var tagCID, frontCID string
+			for _, e := range graph {
+				cid, err := EdgeCID(e)
+				if err != nil {
+					t.Fatal(err)
+				}
+				switch e.Label {
+				case "TAG":
+					tagCID = cid
+				case "FRONTMATTER_TAG":
+					frontCID = cid
+				}
+			}
+			if tagCID == "" || frontCID == "" || tagCID == frontCID {
+				t.Errorf("TAG and FRONTMATTER_TAG must differ in content address, got %q and %q", tagCID, frontCID)
+			}
+		})
+	}
+}
+
+func TestParseTagInFrontMatterAndLaterInBody(t *testing.T) {
+	const id = "11111111-1111-1111-1111-111111111111"
+	const body = "Later #both and #body."
+	data := []byte("---\nuuid: " + id + "\nsee: \"only #front and #both\"\ntags:\n  - bare\n---\n\n" + body)
+	doc, err := Parse(data, "note.md", time.Unix(0, 0), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.ID != id {
+		t.Fatalf("id = %q, want %q", doc.ID, id)
+	}
+	if doc.RawMarkdown != body || strings.Contains(doc.RawMarkdown, "see:") || strings.Contains(doc.RawMarkdown, "#front") {
+		t.Fatalf("rawMarkdown = %q, want %q with the front matter stripped", doc.RawMarkdown, body)
+	}
+
+	graph := buildGraph([]Document{doc})
+	want := []Edge{
+		{Label: "FRONTMATTER_TAG", Title: "front"},
+		{Label: "FRONTMATTER_TAG", Title: "both"},
+		{Label: "TAG", Title: "both"},
+		{Label: "TAG", Title: "body"},
+	}
+	if len(graph) != len(want) {
+		t.Fatalf("got %d edges, want %d: %+v", len(graph), len(want), graph)
+	}
+	seen := make(map[string]struct{}, len(graph))
+	for _, e := range graph {
+		if e.FromDocumentID != id {
+			t.Errorf("FromDocumentID = %q, want %q", e.FromDocumentID, id)
+		}
+		if e.ToDocumentID != e.Title {
+			t.Errorf("ToDocumentID = %q, want title %q", e.ToDocumentID, e.Title)
+		}
+		if e.Title == "bare" {
+			t.Errorf("bare tags list must not become an edge: %+v", e)
+		}
+		if e.Label == "TAG" && e.Title == "front" {
+			t.Errorf("front matter tag leaked into TAG: %+v", e)
+		}
+		if e.Label == "FRONTMATTER_TAG" && e.Title == "body" {
+			t.Errorf("body tag leaked into FRONTMATTER_TAG: %+v", e)
+		}
+		seen[e.Label+"\x00"+e.Title] = struct{}{}
+	}
+	for _, w := range want {
+		if _, ok := seen[w.Label+"\x00"+w.Title]; !ok {
+			t.Errorf("missing %s %q in %+v", w.Label, w.Title, graph)
+		}
+	}
+}
+
 func TestBuildGraphFrontMatterSkipsDocumentsWithoutID(t *testing.T) {
 	graph := buildGraph([]Document{
 		{
