@@ -8,10 +8,11 @@ Identical input always yields the same address, and DAG-JSON canonicalizes map
 ordering, so two front matter blocks that differ only in key order share an
 address. A tag edge is addressed the same way as a wikilink: its preimage is
 the edge JSON, so the address covers the label `TAG` and the tag text as
-written. Wikilink addresses are unchanged, because a tag uses those same fields
-rather than a new one. `RawMarkdownHash` is a plain hex sha256 of the body, not
-an IPLD address — it identifies content, but it is not a CID and is not used as
-a key.
+written. A front matter edge is addressed the same way. Its label is
+`FRONTMATTER_INTERNAL`, `FRONTMATTER_WEBSITE`, or `FRONTMATTER_TAG`, so it does
+not share an address with a body edge for the same target. Body edge addresses
+are unchanged. `RawMarkdownHash` is a plain hex sha256 of the body, not an IPLD
+address — it identifies content, but it is not a CID and is not used as a key.
 
 The same addresses show up as keys and fields when the index leaves this package
 as JSON; the shapes are in [JSON schema](json-schema.md).

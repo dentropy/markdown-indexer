@@ -128,15 +128,17 @@ to a single entry:
 
 | Field              | Description                                                                |
 | ------------------ | -------------------------------------------------------------------------- |
-| `label`            | `INTERNAL` or `WEBSITE`                                                    |
-| `title`            | The pipe alias, or the raw target when there is none                       |
-| `from_document_id` | UUID of the document holding the wikilink                                  |
-| `to_document_id`   | The target's UUID when it resolves in the index, otherwise the raw target   |
+| `label`            | `INTERNAL`, `WEBSITE`, `TAG`, `FRONTMATTER_INTERNAL`, `FRONTMATTER_WEBSITE`, or `FRONTMATTER_TAG` |
+| `title`            | The pipe alias, or the raw target when there is none. For a tag, the text without `#`. For a markdown link, the link text. |
+| `from_document_id` | UUID of the document holding the reference                                 |
+| `to_document_id`   | The target's UUID when a wikilink resolves in the index, otherwise the raw target. For a tag, the tag text. |
 
-Targets starting with `http://` or `https://` are labeled `WEBSITE`; everything
-else is `INTERNAL`. Only documents with a non-empty UUID produce edges. Section
-anchors (`[[target#section]]`) and aliases (`[[target|alias]]`) are both
-understood.
+Body wikilinks starting with `http://` or `https://` are `WEBSITE`; every other
+body wikilink is `INTERNAL`. An inline `#tag` in the body is `TAG`. The same
+shapes in front matter strings use the `FRONTMATTER_` labels, and an inline
+markdown link is read only from front matter. Only documents with a non-empty
+UUID produce edges. Section anchors (`[[target#section]]`) and aliases
+(`[[target|alias]]`) are both understood.
 
 ## Checking the vault
 

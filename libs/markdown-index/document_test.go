@@ -514,17 +514,192 @@ func TestBuildGraphWikilinkAndTag(t *testing.T) {
 	}
 }
 
-func TestBuildGraphFrontMatterTagsAreNotEdges(t *testing.T) {
+func TestBuildGraphFrontMatterTagsFieldIsNotAnEdge(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"tags":["person","history"],"also":"go, cli, tools","url":"https://example.com"}`),
+		},
+	})
+	if len(graph) != 0 {
+		t.Errorf("a bare tags list, a comma-separated string, and a bare URL must not become edges, got %+v", graph)
+	}
+}
+
+func TestBuildGraphFrontMatterWikilink(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"owner":"[[note]]","cover":"![[banner.png]]","missing":"[[gone]]"}`),
+		},
+		{ID: "22222222-2222-2222-2222-222222222222", Name: "note"},
+	})
+	if len(graph) != 3 {
+		t.Fatalf("expected 3 front matter wikilinks, got %d: %+v", len(graph), graph)
+	}
+	find := func(to, title string) {
+		t.Helper()
+		for _, e := range graph {
+			if e.Label == "FRONTMATTER_INTERNAL" && e.Title == title && e.ToDocumentID == to && e.FromDocumentID == "11111111-1111-1111-1111-111111111111" {
+				return
+			}
+		}
+		t.Errorf("missing FRONTMATTER_INTERNAL %q -> %q", title, to)
+	}
+	find("22222222-2222-2222-2222-222222222222", "note")
+	find("banner.png", "banner.png")
+	find("gone", "gone")
+}
+
+func TestBuildGraphFrontMatterWebsiteWikilink(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"see":"[[https://example.com|Example]]"}`),
+		},
+	})
+	if len(graph) != 1 {
+		t.Fatalf("expected 1 edge, got %d: %+v", len(graph), graph)
+	}
+	for _, e := range graph {
+		if e.Label != "FRONTMATTER_WEBSITE" || e.Title != "Example" || e.ToDocumentID != "https://example.com" {
+			t.Errorf("edge = %+v", e)
+		}
+	}
+}
+
+func TestBuildGraphFrontMatterMarkdownLinks(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"a":"[spec](https://ipld.io/specs)","b":"[local](reference/nostr-nip-01.md)","c":"![](https://example.com/a.png)","d":"![alt](assets/x.png)","e":"[](https://example.com)"}`),
+		},
+		{ID: "22222222-2222-2222-2222-222222222222", Name: "nostr-nip-01"},
+	})
+	if len(graph) != 3 {
+		t.Fatalf("expected 3 markdown links, got %d: %+v", len(graph), graph)
+	}
+	find := func(label, title, to string) {
+		t.Helper()
+		for _, e := range graph {
+			if e.Label == label && e.Title == title && e.ToDocumentID == to {
+				return
+			}
+		}
+		t.Errorf("missing %s %q -> %q", label, title, to)
+	}
+	find("FRONTMATTER_WEBSITE", "spec", "https://ipld.io/specs")
+	find("FRONTMATTER_INTERNAL", "local", "reference/nostr-nip-01.md")
+	find("FRONTMATTER_WEBSITE", "https://example.com", "https://example.com")
+}
+
+func TestBuildGraphFrontMatterTag(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"see":"note #person and #inbox/to-read","quoted":"#person"}`),
+		},
+	})
+	if len(graph) != 2 {
+		t.Fatalf("expected 2 front matter tags, got %d: %+v", len(graph), graph)
+	}
+	find := func(tag string) {
+		t.Helper()
+		for _, e := range graph {
+			if e.Label == "FRONTMATTER_TAG" && e.Title == tag && e.ToDocumentID == tag && e.FromDocumentID == "11111111-1111-1111-1111-111111111111" {
+				return
+			}
+		}
+		t.Errorf("missing FRONTMATTER_TAG %q", tag)
+	}
+	find("person")
+	find("inbox/to-read")
+}
+
+func TestBuildGraphFrontMatterNestedString(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"a":{"b":["see #person"]}}`),
+		},
+	})
+	if len(graph) != 1 {
+		t.Fatalf("expected 1 edge, got %d: %+v", len(graph), graph)
+	}
+	for _, e := range graph {
+		if e.Label != "FRONTMATTER_TAG" || e.Title != "person" {
+			t.Errorf("edge = %+v", e)
+		}
+	}
+}
+
+func TestBuildGraphFrontMatterAndBodyStaySeparate(t *testing.T) {
 	graph := buildGraph([]Document{
 		{
 			ID:          "11111111-1111-1111-1111-111111111111",
 			Name:        "post",
-			RawMarkdown: "No inline tag.",
-			Metadata:    json.RawMessage(`{"tags":["from-yaml"]}`),
+			RawMarkdown: "See [[note]] and #person.",
+			Metadata:    json.RawMessage(`{"see":"[[note]] #person"}`),
+		},
+		{ID: "22222222-2222-2222-2222-222222222222", Name: "note"},
+	})
+	if len(graph) != 4 {
+		t.Fatalf("expected body and front matter edges to stay separate, got %d: %+v", len(graph), graph)
+	}
+	var internal, tag, frontInternal, frontTag bool
+	for _, e := range graph {
+		switch e.Label {
+		case "INTERNAL":
+			internal = e.ToDocumentID == "22222222-2222-2222-2222-222222222222"
+		case "TAG":
+			tag = e.Title == "person" && e.ToDocumentID == "person"
+		case "FRONTMATTER_INTERNAL":
+			frontInternal = e.ToDocumentID == "22222222-2222-2222-2222-222222222222"
+		case "FRONTMATTER_TAG":
+			frontTag = e.Title == "person" && e.ToDocumentID == "person"
+		}
+	}
+	if !internal || !tag || !frontInternal || !frontTag {
+		t.Errorf("want INTERNAL, TAG, FRONTMATTER_INTERNAL, and FRONTMATTER_TAG, got %+v", graph)
+	}
+}
+
+func TestBuildGraphFrontMatterSkipsDocumentsWithoutID(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"see":"[[note]] #person [x](https://example.com)"}`),
 		},
 	})
 	if len(graph) != 0 {
-		t.Errorf("front matter tags must not become edges, got %+v", graph)
+		t.Errorf("documents without an ID must be skipped, got %+v", graph)
+	}
+}
+
+func TestBuildGraphFrontMatterBadMetadata(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:          "11111111-1111-1111-1111-111111111111",
+			Name:        "post",
+			RawMarkdown: "See [[note]].",
+			Metadata:    json.RawMessage(`not json`),
+		},
+		{ID: "22222222-2222-2222-2222-222222222222", Name: "note"},
+	})
+	if len(graph) != 1 {
+		t.Fatalf("expected the body edge only, got %d: %+v", len(graph), graph)
+	}
+	for _, e := range graph {
+		if e.Label != "INTERNAL" {
+			t.Errorf("edge = %+v, want INTERNAL", e)
+		}
 	}
 }
 

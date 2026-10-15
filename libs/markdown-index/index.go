@@ -119,7 +119,7 @@ type Index struct {
 	// Documents holds every indexed document, ordered by relative path.
 	Documents []Document
 
-	// Edges holds the graph of wikilinks and inline tags, keyed by content address.
+	// Edges holds the graph of wikilinks, inline tags, and front matter edges, keyed by content address.
 	Edges map[string]Edge
 
 	// Problems holds the files that could not be indexed. A non-empty slice

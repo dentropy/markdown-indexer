@@ -6,32 +6,42 @@ import (
 	"strings"
 )
 
-// Edge is one relationship leaving a document: a resolved wikilink or an inline
-// tag. Identical edges share a content address and dedupe to a single entry, so
-// the same vault always yields the same graph.
+// Edge is one relationship leaving a document: a body wikilink, an inline tag,
+// or the same kind of reference found in a front matter string. Identical
+// edges share a content address and dedupe to a single entry, so the same
+// vault always yields the same graph.
 type Edge struct {
-	// Label classifies the edge: INTERNAL, WEBSITE, or TAG.
+	// Label classifies the edge. Body hits are INTERNAL, WEBSITE, or TAG.
+	// Front matter hits are FRONTMATTER_INTERNAL, FRONTMATTER_WEBSITE, or
+	// FRONTMATTER_TAG, so they do not share an address with a body edge.
 	Label string `json:"label"`
 
 	// Title is the link's display text: the alias when the wikilink has one,
-	// otherwise the target text. For a tag it is the tag text without the
-	// leading #.
+	// otherwise the target text. For a markdown link it is the link text. For
+	// a tag it is the tag text without the leading #.
 	Title string `json:"title"`
 
-	// FromDocumentID is the UUID of the document holding the wikilink or tag.
+	// FromDocumentID is the UUID of the document holding the wikilink, markdown
+	// link, or tag.
 	FromDocumentID string `json:"from_document_id"`
 
 	// ToDocumentID is the UUID of the target document when a wikilink resolves
-	// to one in the index, and otherwise the raw target text. For a tag it is
+	// to one in the index, and otherwise the raw target text. A markdown link
+	// keeps its destination as written and is not resolved. For a tag it is
 	// the tag text. A tag does not resolve to a document.
 	ToDocumentID string `json:"to_document_id"`
 }
 
 // edgeLabels classifies an edge from its target, or marks an inline tag.
+// Front matter uses its own labels so a hit there does not collapse into the
+// body edge for the same target.
 const (
-	labelInternal = "INTERNAL"
-	labelWebsite  = "WEBSITE"
-	labelTag      = "TAG"
+	labelInternal      = "INTERNAL"
+	labelWebsite       = "WEBSITE"
+	labelTag           = "TAG"
+	labelFrontInternal = "FRONTMATTER_INTERNAL"
+	labelFrontWebsite  = "FRONTMATTER_WEBSITE"
+	labelFrontTag      = "FRONTMATTER_TAG"
 )
 
 // wikilinkRegex matches markdown wikilinks: [[target]], [[target#section]],
@@ -71,11 +81,12 @@ func ExtractWikilinks(content string) []string {
 // hyphens and slashes.
 var tagRegex = regexp.MustCompile(`(?m)(?:^|[^\p{L}\p{N}\p{So}_/])#([\p{L}\p{N}\p{So}_][\p{L}\p{N}\p{So}_/-]*)`)
 
-// markdownTags returns the inline #tags in a markdown body, in order, with the
-// leading # removed. The same spelling twice is returned once. An all-digit
-// body (#1984) is not a tag; #y1984 is. Headings fail the match because a space
-// follows the hashes. Fenced blocks and inline code are masked first. Front
-// matter is not read: callers pass the body with it already stripped.
+// markdownTags returns the inline #tags in content, in order, with the leading
+// # removed. The same spelling twice is returned once. An all-digit body
+// (#1984) is not a tag; #y1984 is. Headings fail the match because a space
+// follows the hashes. Fenced blocks and inline code are masked first. The
+// function does not know about front matter: collectEdges passes the body,
+// and passes front matter strings on their own.
 func markdownTags(content string) []string {
 	matches := tagRegex.FindAllStringSubmatch(maskCode(content), -1)
 	tags := make([]string, 0, len(matches))
@@ -227,9 +238,120 @@ func inlineCodeClose(line string, from, n int) int {
 	return -1
 }
 
-// collectEdges scans every document for [[wikilinks]] and inline #tags and
-// returns a graph edge for each one found. Documents without a UUID are
-// skipped, since an edge has to start from a UUID to mean anything.
+// markdownLinkRegex matches an inline [text](destination). The destination
+// ends at the first whitespace or closing paren, so a quoted title after the
+// URL is left out. An image embed is this pattern with a leading !; callers
+// drop those.
+var markdownLinkRegex = regexp.MustCompile(`\[([^\]\n]*)\]\(([^)\s]+)\)`)
+
+// appendWikilinks appends one edge per [[wikilink]] in content. internal and
+// website select the label pair: body labels, or the front matter pair.
+func appendWikilinks(edges []Edge, content, fromID string, nameToID map[string]string, internal, website string) []Edge {
+	matches := wikilinkRegex.FindAllStringSubmatch(content, -1)
+	for _, m := range matches {
+		target := strings.TrimSpace(m[1])
+		if target == "" {
+			continue
+		}
+
+		alias := ""
+		if len(m) > 3 {
+			alias = strings.TrimSpace(m[3])
+		}
+		title := alias
+		if title == "" {
+			title = target
+		}
+
+		label := internal
+		if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
+			label = website
+		}
+
+		toID := target
+		if id, ok := nameToID[target]; ok {
+			toID = id
+		}
+
+		edges = append(edges, Edge{
+			Label:          label,
+			Title:          title,
+			FromDocumentID: fromID,
+			ToDocumentID:   toID,
+		})
+	}
+	return edges
+}
+
+// appendMarkdownLinks appends one front matter edge per inline [text](destination).
+// Image embeds (`![](...)` and `![alt](...)`) are skipped. The destination is
+// stored as written and is not resolved to a document.
+func appendMarkdownLinks(edges []Edge, content, fromID string) []Edge {
+	locs := markdownLinkRegex.FindAllStringSubmatchIndex(content, -1)
+	for _, loc := range locs {
+		if loc[0] > 0 && content[loc[0]-1] == '!' {
+			continue
+		}
+		text := ""
+		if loc[2] >= 0 && loc[3] >= 0 {
+			text = strings.TrimSpace(content[loc[2]:loc[3]])
+		}
+		dest := content[loc[4]:loc[5]]
+		if dest == "" {
+			continue
+		}
+		title := text
+		if title == "" {
+			title = dest
+		}
+		label := labelFrontInternal
+		if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
+			label = labelFrontWebsite
+		}
+		edges = append(edges, Edge{
+			Label:          label,
+			Title:          title,
+			FromDocumentID: fromID,
+			ToDocumentID:   dest,
+		})
+	}
+	return edges
+}
+
+// frontMatterStrings returns every string value in parsed front matter, at any
+// depth. Keys are not included. Undecodable metadata yields nothing.
+func frontMatterStrings(meta json.RawMessage) []string {
+	if len(meta) == 0 {
+		return nil
+	}
+	var v any
+	if err := json.Unmarshal(meta, &v); err != nil {
+		return nil
+	}
+	var out []string
+	collectStrings(v, &out)
+	return out
+}
+
+func collectStrings(v any, out *[]string) {
+	switch t := v.(type) {
+	case string:
+		*out = append(*out, t)
+	case []any:
+		for _, child := range t {
+			collectStrings(child, out)
+		}
+	case map[string]any:
+		for _, child := range t {
+			collectStrings(child, out)
+		}
+	}
+}
+
+// collectEdges scans every document for body [[wikilinks]] and inline #tags,
+// then for wikilinks, markdown links, and #tags in front matter strings.
+// Documents without a UUID are skipped, since an edge has to start from a UUID
+// to mean anything.
 func collectEdges(docs []Document) []Edge {
 	nameToID := make(map[string]string, len(docs))
 	for _, d := range docs {
@@ -241,39 +363,7 @@ func collectEdges(docs []Document) []Edge {
 		if doc.ID == "" {
 			continue
 		}
-		matches := wikilinkRegex.FindAllStringSubmatch(doc.RawMarkdown, -1)
-		for _, m := range matches {
-			target := strings.TrimSpace(m[1])
-			if target == "" {
-				continue
-			}
-
-			alias := ""
-			if len(m) > 3 {
-				alias = strings.TrimSpace(m[3])
-			}
-			title := alias
-			if title == "" {
-				title = target
-			}
-
-			label := labelInternal
-			if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
-				label = labelWebsite
-			}
-
-			toID := target
-			if id, ok := nameToID[target]; ok {
-				toID = id
-			}
-
-			edges = append(edges, Edge{
-				Label:          label,
-				Title:          title,
-				FromDocumentID: doc.ID,
-				ToDocumentID:   toID,
-			})
-		}
+		edges = appendWikilinks(edges, doc.RawMarkdown, doc.ID, nameToID, labelInternal, labelWebsite)
 		for _, tag := range markdownTags(doc.RawMarkdown) {
 			edges = append(edges, Edge{
 				Label:          labelTag,
@@ -282,14 +372,26 @@ func collectEdges(docs []Document) []Edge {
 				ToDocumentID:   tag,
 			})
 		}
+		for _, s := range frontMatterStrings(doc.Metadata) {
+			edges = appendWikilinks(edges, s, doc.ID, nameToID, labelFrontInternal, labelFrontWebsite)
+			edges = appendMarkdownLinks(edges, s, doc.ID)
+			for _, tag := range markdownTags(s) {
+				edges = append(edges, Edge{
+					Label:          labelFrontTag,
+					Title:          tag,
+					FromDocumentID: doc.ID,
+					ToDocumentID:   tag,
+				})
+			}
+		}
 	}
 	return edges
 }
 
-// BuildEdges scans documents for [[wikilinks]] and returns the graph keyed by
-// each edge's content address, the same way a Scan populates Index.Edges. It
-// exists for callers holding documents from somewhere other than a vault walk,
-// such as a database read-back.
+// BuildEdges scans documents for body and front matter links and tags and
+// returns the graph keyed by each edge's content address, the same way a Scan
+// populates Index.Edges. It exists for callers holding documents from
+// somewhere other than a vault walk, such as a database read-back.
 func BuildEdges(docs []Document) map[string]Edge {
 	return buildGraph(docs)
 }
