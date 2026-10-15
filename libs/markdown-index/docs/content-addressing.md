@@ -6,7 +6,13 @@ matter *carries* its address in `Document.FrontmatterCID`.
 
 Identical input always yields the same address, and DAG-JSON canonicalizes map
 ordering, so two front matter blocks that differ only in key order share an
-address. `RawMarkdownHash` is a plain hex sha256 of the body, not an IPLD
+address. A tag edge is addressed the same way as a wikilink: its preimage is
+the edge JSON, so the address covers the label `TAG` and the tag text as
+written. A front matter edge is addressed the same way. Its label is
+`FRONTMATTER_INTERNAL`, `FRONTMATTER_URL`, or `FRONTMATTER_TAG`, so it does
+not share an address with a body edge for the same target. The label is part
+of that preimage, so a body `URL` edge does not keep the address a `WEBSITE`
+edge had. `RawMarkdownHash` is a plain hex sha256 of the body, not an IPLD
 address — it identifies content, but it is not a CID and is not used as a key.
 
 The same addresses show up as keys and fields when the index leaves this package

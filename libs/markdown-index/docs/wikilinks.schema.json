@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "markdown-index wikilink graph",
-  "description": "The wikilink graph: every resolved edge keyed by its content address, the same address EdgeCID computes. Identical edges share a content address and dedupe to a single entry.",
+  "description": "The graph of wikilinks, inline tags, and front matter edges: every edge keyed by its content address, the same address EdgeCID computes. Identical edges share a content address and dedupe to a single entry.",
   "type": "object",
   "additionalProperties": {
     "$ref": "#/$defs/wikilink"
@@ -9,7 +9,7 @@
   "$defs": {
     "wikilink": {
       "title": "markdown-index wikilink",
-      "description": "One resolved wikilink.",
+      "description": "One graph edge: a resolved wikilink, an inline tag, or a front matter edge.",
       "type": "object",
       "required": [
         "label",
@@ -23,21 +23,25 @@
           "type": "string",
           "enum": [
             "INTERNAL",
-            "WEBSITE"
+            "URL",
+            "TAG",
+            "FRONTMATTER_INTERNAL",
+            "FRONTMATTER_URL",
+            "FRONTMATTER_TAG"
           ],
-          "description": "WEBSITE when the target begins http:// or https://, INTERNAL otherwise."
+          "description": "URL when a body wikilink target begins with a URL scheme (CommonMark absolute-URI scheme: 2–32 characters, then a colon), INTERNAL for every other body wikilink. A note title with a colon and a space stays INTERNAL. TAG is an inline #tag in the markdown body. FRONTMATTER_INTERNAL, FRONTMATTER_URL, and FRONTMATTER_TAG are the same shapes found in a front matter string, including an inline markdown link. TAG and FRONTMATTER_TAG carry the text without # in both title and to_document_id, and neither resolves to a document UUID. A front matter tags list of bare words does not produce a label."
         },
         "title": {
           "type": "string",
-          "description": "The pipe alias when the wikilink has one, otherwise the raw target text."
+          "description": "The pipe alias when the wikilink has one, otherwise the raw target text. For a markdown link, the link text. For a TAG or FRONTMATTER_TAG edge, the tag text without the leading #."
         },
         "from_document_id": {
           "type": "string",
-          "description": "UUID of the document holding the wikilink. Only documents with a non-empty UUID produce edges."
+          "description": "UUID of the document holding the reference. Only documents with a non-empty UUID produce edges."
         },
         "to_document_id": {
           "type": "string",
-          "description": "The target's UUID when the link resolves in the index, otherwise the raw target text."
+          "description": "The target's UUID when a wikilink resolves in the index, otherwise the raw target text. A markdown link keeps its destination as written. For a TAG or FRONTMATTER_TAG edge, the tag text, not a document UUID."
         }
       }
     }

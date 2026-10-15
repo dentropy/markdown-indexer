@@ -315,8 +315,45 @@ func TestBuildGraph(t *testing.T) {
 	}
 
 	find("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "INTERNAL", "note")
-	find("11111111-1111-1111-1111-111111111111", "https://example.com", "WEBSITE", "Example")
+	find("11111111-1111-1111-1111-111111111111", "https://example.com", "URL", "Example")
 	find("22222222-2222-2222-2222-222222222222", "11111111-1111-1111-1111-111111111111", "INTERNAL", "post")
+}
+
+func TestBuildGraphURLScheme(t *testing.T) {
+	cases := []struct {
+		target string
+		label  string
+	}{
+		{"https://example.com", "URL"},
+		{"http://example.com", "URL"},
+		{"HTTP://example.com", "URL"},
+		{"mailto:ada@example.com", "URL"},
+		{"ipfs://bafyrei", "URL"},
+		{"magnet:?xt=urn:btih:abc", "URL"},
+		{"ftp://files.example.com/a.txt", "URL"},
+		{"note", "INTERNAL"},
+		{"reference/nostr-nip-01.md", "INTERNAL"},
+		{"www.example.com", "INTERNAL"},
+		{"Design: the indexer", "INTERNAL"},
+		{"C:/Users/x", "INTERNAL"},
+	}
+	for _, c := range cases {
+		t.Run(c.target, func(t *testing.T) {
+			graph := buildGraph([]Document{{
+				ID:          "11111111-1111-1111-1111-111111111111",
+				Name:        "post",
+				RawMarkdown: "See [[" + c.target + "]].",
+			}})
+			if len(graph) != 1 {
+				t.Fatalf("expected 1 edge, got %d: %+v", len(graph), graph)
+			}
+			for _, e := range graph {
+				if e.Label != c.label || e.ToDocumentID != c.target {
+					t.Errorf("edge = %+v, want %s -> %s", e, c.label, c.target)
+				}
+			}
+		})
+	}
 }
 
 func TestBuildGraphUnresolved(t *testing.T) {
@@ -406,6 +443,470 @@ func TestSharedMetadata(t *testing.T) {
 	for _, c := range cases {
 		if got := SharedMetadata(json.RawMessage(c.metadata)); got != c.want {
 			t.Errorf("SharedMetadata(%s) = %v, want %v", c.metadata, got, c.want)
+		}
+	}
+}
+
+func TestMarkdownTags(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{"prose", "See #project and #inbox/to-read.", []string{"project", "inbox/to-read"}},
+		{"headings", "# Title\n## Section\n", nil},
+		{"all digits", "#1984", nil},
+		{"digits with a letter", "#y1984", []string{"y1984"}},
+		{"nested digits", "#1984/notes", []string{"1984/notes"}},
+		{"unclosed fence", "open\n```\n#not\n", nil},
+		{"duplicate spelling", "#project #project", []string{"project"}},
+		{"case preserved", "#Tag and #tag", []string{"Tag", "tag"}},
+		{"wikilink section", "[[note#setup]]", nil},
+		{"url fragment", "Visit https://example.com/a#frag", nil},
+		{"inline code", "See `#not` and #yes.", []string{"yes"}},
+		{"backtick fence", "before\n```\n#not\n```\n#yes\n", []string{"yes"}},
+		{"tilde fence", "~~~\n#not\n~~~\n#yes\n", []string{"yes"}},
+		{"front matter text", "tags: [from-yaml]", nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := markdownTags(c.content)
+			if len(got) != len(c.want) {
+				t.Fatalf("markdownTags() = %v, want %v", got, c.want)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Errorf("tag[%d] = %q, want %q", i, got[i], c.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestBuildGraphTags(t *testing.T) {
+	graph := buildGraph([]Document{
+		{ID: "11111111-1111-1111-1111-111111111111", Name: "post", RawMarkdown: "See #project and #inbox/to-read."},
+	})
+	if len(graph) != 2 {
+		t.Fatalf("expected 2 tag edges, got %d", len(graph))
+	}
+	find := func(tag string) {
+		t.Helper()
+		for _, e := range graph {
+			if e.Label == "TAG" && e.Title == tag && e.ToDocumentID == tag && e.FromDocumentID == "11111111-1111-1111-1111-111111111111" {
+				return
+			}
+		}
+		t.Errorf("missing TAG edge %q", tag)
+	}
+	find("project")
+	find("inbox/to-read")
+}
+
+func TestBuildGraphDuplicateTag(t *testing.T) {
+	graph := buildGraph([]Document{
+		{ID: "11111111-1111-1111-1111-111111111111", Name: "post", RawMarkdown: "#project #project"},
+	})
+	if len(graph) != 1 {
+		t.Fatalf("expected 1 tag edge, got %d", len(graph))
+	}
+	for _, e := range graph {
+		if e.Label != "TAG" || e.Title != "project" || e.ToDocumentID != "project" {
+			t.Errorf("edge = %+v, want TAG project", e)
+		}
+	}
+}
+
+func TestBuildGraphHeadingIsNotATag(t *testing.T) {
+	if graph := buildGraph([]Document{{ID: "1", Name: "post", RawMarkdown: "# Post"}}); len(graph) != 0 {
+		t.Errorf("a heading must not become a tag edge, got %d", len(graph))
+	}
+}
+
+func TestBuildGraphTagSkipsDocumentsWithoutID(t *testing.T) {
+	if graph := buildGraph([]Document{{ID: "", Name: "no-id", RawMarkdown: "See #project."}}); len(graph) != 0 {
+		t.Errorf("documents without an ID must be skipped, got %d edges", len(graph))
+	}
+}
+
+func TestBuildGraphWikilinkAndTag(t *testing.T) {
+	graph := buildGraph([]Document{
+		{ID: "11111111-1111-1111-1111-111111111111", Name: "post", RawMarkdown: "See [[note]] and #project."},
+		{ID: "22222222-2222-2222-2222-222222222222", Name: "note", RawMarkdown: "# Note"},
+	})
+	if len(graph) != 2 {
+		t.Fatalf("expected a wikilink and a tag, got %d edges", len(graph))
+	}
+	var sawLink, sawTag bool
+	for _, e := range graph {
+		if e.Label == "INTERNAL" && e.ToDocumentID == "22222222-2222-2222-2222-222222222222" {
+			sawLink = true
+		}
+		if e.Label == "TAG" && e.Title == "project" && e.ToDocumentID == "project" {
+			sawTag = true
+		}
+	}
+	if !sawLink || !sawTag {
+		t.Errorf("want a resolved wikilink and a TAG edge, got %+v", graph)
+	}
+}
+
+func TestBuildGraphFrontMatterTagsFieldIsNotAnEdge(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"tags":["person","history"],"also":"go, cli, tools","url":"https://example.com"}`),
+		},
+	})
+	if len(graph) != 0 {
+		t.Errorf("a bare tags list, a comma-separated string, and a bare URL must not become edges, got %+v", graph)
+	}
+}
+
+func TestBuildGraphFrontMatterWikilink(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"owner":"[[note]]","cover":"![[banner.png]]","missing":"[[gone]]"}`),
+		},
+		{ID: "22222222-2222-2222-2222-222222222222", Name: "note"},
+	})
+	if len(graph) != 3 {
+		t.Fatalf("expected 3 front matter wikilinks, got %d: %+v", len(graph), graph)
+	}
+	find := func(to, title string) {
+		t.Helper()
+		for _, e := range graph {
+			if e.Label == "FRONTMATTER_INTERNAL" && e.Title == title && e.ToDocumentID == to && e.FromDocumentID == "11111111-1111-1111-1111-111111111111" {
+				return
+			}
+		}
+		t.Errorf("missing FRONTMATTER_INTERNAL %q -> %q", title, to)
+	}
+	find("22222222-2222-2222-2222-222222222222", "note")
+	find("banner.png", "banner.png")
+	find("gone", "gone")
+}
+
+func TestBuildGraphFrontMatterURLWikilink(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"see":"[[https://example.com|Example]]"}`),
+		},
+	})
+	if len(graph) != 1 {
+		t.Fatalf("expected 1 edge, got %d: %+v", len(graph), graph)
+	}
+	for _, e := range graph {
+		if e.Label != "FRONTMATTER_URL" || e.Title != "Example" || e.ToDocumentID != "https://example.com" {
+			t.Errorf("edge = %+v", e)
+		}
+	}
+}
+
+func TestBuildGraphFrontMatterMarkdownLinks(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"a":"[spec](https://ipld.io/specs)","b":"[local](reference/nostr-nip-01.md)","c":"![](https://example.com/a.png)","d":"![alt](assets/x.png)","e":"[](https://example.com)","f":"[ada](mailto:ada@example.com)"}`),
+		},
+		{ID: "22222222-2222-2222-2222-222222222222", Name: "nostr-nip-01"},
+	})
+	if len(graph) != 4 {
+		t.Fatalf("expected 4 markdown links, got %d: %+v", len(graph), graph)
+	}
+	find := func(label, title, to string) {
+		t.Helper()
+		for _, e := range graph {
+			if e.Label == label && e.Title == title && e.ToDocumentID == to {
+				return
+			}
+		}
+		t.Errorf("missing %s %q -> %q", label, title, to)
+	}
+	find("FRONTMATTER_URL", "spec", "https://ipld.io/specs")
+	find("FRONTMATTER_INTERNAL", "local", "reference/nostr-nip-01.md")
+	find("FRONTMATTER_URL", "https://example.com", "https://example.com")
+	find("FRONTMATTER_URL", "ada", "mailto:ada@example.com")
+}
+
+func TestBuildGraphFrontMatterTag(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"see":"note #person and #inbox/to-read","quoted":"#person"}`),
+		},
+	})
+	if len(graph) != 2 {
+		t.Fatalf("expected 2 front matter tags, got %d: %+v", len(graph), graph)
+	}
+	find := func(tag string) {
+		t.Helper()
+		for _, e := range graph {
+			if e.Label == "FRONTMATTER_TAG" && e.Title == tag && e.ToDocumentID == tag && e.FromDocumentID == "11111111-1111-1111-1111-111111111111" {
+				return
+			}
+		}
+		t.Errorf("missing FRONTMATTER_TAG %q", tag)
+	}
+	find("person")
+	find("inbox/to-read")
+}
+
+func TestBuildGraphFrontMatterNestedString(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"a":{"b":["see #person"]}}`),
+		},
+	})
+	if len(graph) != 1 {
+		t.Fatalf("expected 1 edge, got %d: %+v", len(graph), graph)
+	}
+	for _, e := range graph {
+		if e.Label != "FRONTMATTER_TAG" || e.Title != "person" {
+			t.Errorf("edge = %+v", e)
+		}
+	}
+}
+
+func TestBuildGraphFrontMatterAndBodyStaySeparate(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:          "11111111-1111-1111-1111-111111111111",
+			Name:        "post",
+			RawMarkdown: "See [[note]] and #person.",
+			Metadata:    json.RawMessage(`{"see":"[[note]] #person"}`),
+		},
+		{ID: "22222222-2222-2222-2222-222222222222", Name: "note"},
+	})
+	if len(graph) != 4 {
+		t.Fatalf("expected body and front matter edges to stay separate, got %d: %+v", len(graph), graph)
+	}
+	var internal, tag, frontInternal, frontTag bool
+	for _, e := range graph {
+		switch e.Label {
+		case "INTERNAL":
+			internal = e.ToDocumentID == "22222222-2222-2222-2222-222222222222"
+		case "TAG":
+			tag = e.Title == "person" && e.ToDocumentID == "person"
+		case "FRONTMATTER_INTERNAL":
+			frontInternal = e.ToDocumentID == "22222222-2222-2222-2222-222222222222"
+		case "FRONTMATTER_TAG":
+			frontTag = e.Title == "person" && e.ToDocumentID == "person"
+		}
+	}
+	if !internal || !tag || !frontInternal || !frontTag {
+		t.Errorf("want INTERNAL, TAG, FRONTMATTER_INTERNAL, and FRONTMATTER_TAG, got %+v", graph)
+	}
+}
+
+func TestBuildGraphTagOnBothSides(t *testing.T) {
+	const fromID = "11111111-1111-1111-1111-111111111111"
+	cases := []struct {
+		name         string
+		raw          string
+		metadata     string
+		want         []Edge
+		distinctAddr bool
+	}{
+		{
+			name:         "same tag in both",
+			raw:          "See #person.",
+			metadata:     `{"see":"note #person"}`,
+			want:         []Edge{{Label: "TAG", Title: "person"}, {Label: "FRONTMATTER_TAG", Title: "person"}},
+			distinctAddr: true,
+		},
+		{
+			name:     "repeated on each side",
+			raw:      "#person #person",
+			metadata: `{"a":"#person","b":"also #person"}`,
+			want:     []Edge{{Label: "TAG", Title: "person"}, {Label: "FRONTMATTER_TAG", Title: "person"}},
+		},
+		{
+			name:     "only in front matter",
+			raw:      "No tag here.",
+			metadata: `{"see":"note #person"}`,
+			want:     []Edge{{Label: "FRONTMATTER_TAG", Title: "person"}},
+		},
+		{
+			name:     "only in the body",
+			raw:      "See #person.",
+			metadata: `{"tags":["person"],"note":"plain"}`,
+			want:     []Edge{{Label: "TAG", Title: "person"}},
+		},
+		{
+			name:     "shared plus unique",
+			raw:      "See #person and #inbox.",
+			metadata: `{"see":"note #person and #project"}`,
+			want: []Edge{
+				{Label: "TAG", Title: "person"},
+				{Label: "TAG", Title: "inbox"},
+				{Label: "FRONTMATTER_TAG", Title: "person"},
+				{Label: "FRONTMATTER_TAG", Title: "project"},
+			},
+		},
+		{
+			name:     "case differs",
+			raw:      "See #person.",
+			metadata: `{"see":"note #Person"}`,
+			want:     []Edge{{Label: "TAG", Title: "person"}, {Label: "FRONTMATTER_TAG", Title: "Person"}},
+		},
+		{
+			name:     "body hit is fenced",
+			raw:      "before\n```\n#person\n```\n",
+			metadata: `{"see":"note #person"}`,
+			want:     []Edge{{Label: "FRONTMATTER_TAG", Title: "person"}},
+		},
+		{
+			name:     "front matter hit is fenced",
+			raw:      "See #person.",
+			metadata: "{\"see\":\"```\\n#person\\n```\"}",
+			want:     []Edge{{Label: "TAG", Title: "person"}},
+		},
+		{
+			name:     "nested front matter",
+			raw:      "See #person.",
+			metadata: `{"a":{"b":["see #person"]}}`,
+			want:     []Edge{{Label: "TAG", Title: "person"}, {Label: "FRONTMATTER_TAG", Title: "person"}},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			graph := buildGraph([]Document{{
+				ID:          fromID,
+				Name:        "post",
+				RawMarkdown: c.raw,
+				Metadata:    json.RawMessage(c.metadata),
+			}})
+			if len(graph) != len(c.want) {
+				t.Fatalf("got %d edges, want %d: %+v", len(graph), len(c.want), graph)
+			}
+			seen := make(map[string]Edge, len(graph))
+			for _, e := range graph {
+				if e.FromDocumentID != fromID {
+					t.Errorf("FromDocumentID = %q, want %q", e.FromDocumentID, fromID)
+				}
+				if e.ToDocumentID != e.Title {
+					t.Errorf("ToDocumentID = %q, want title %q", e.ToDocumentID, e.Title)
+				}
+				seen[e.Label+"\x00"+e.Title] = e
+			}
+			for _, w := range c.want {
+				if _, ok := seen[w.Label+"\x00"+w.Title]; !ok {
+					t.Errorf("missing %s %q in %+v", w.Label, w.Title, graph)
+				}
+			}
+			if !c.distinctAddr {
+				return
+			}
+			var tagCID, frontCID string
+			for _, e := range graph {
+				cid, err := EdgeCID(e)
+				if err != nil {
+					t.Fatal(err)
+				}
+				switch e.Label {
+				case "TAG":
+					tagCID = cid
+				case "FRONTMATTER_TAG":
+					frontCID = cid
+				}
+			}
+			if tagCID == "" || frontCID == "" || tagCID == frontCID {
+				t.Errorf("TAG and FRONTMATTER_TAG must differ in content address, got %q and %q", tagCID, frontCID)
+			}
+		})
+	}
+}
+
+func TestParseTagInFrontMatterAndLaterInBody(t *testing.T) {
+	const id = "11111111-1111-1111-1111-111111111111"
+	const body = "Later #both and #body."
+	data := []byte("---\nuuid: " + id + "\nsee: \"only #front and #both\"\ntags:\n  - bare\n---\n\n" + body)
+	doc, err := Parse(data, "note.md", time.Unix(0, 0), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.ID != id {
+		t.Fatalf("id = %q, want %q", doc.ID, id)
+	}
+	if doc.RawMarkdown != body || strings.Contains(doc.RawMarkdown, "see:") || strings.Contains(doc.RawMarkdown, "#front") {
+		t.Fatalf("rawMarkdown = %q, want %q with the front matter stripped", doc.RawMarkdown, body)
+	}
+
+	graph := buildGraph([]Document{doc})
+	want := []Edge{
+		{Label: "FRONTMATTER_TAG", Title: "front"},
+		{Label: "FRONTMATTER_TAG", Title: "both"},
+		{Label: "TAG", Title: "both"},
+		{Label: "TAG", Title: "body"},
+	}
+	if len(graph) != len(want) {
+		t.Fatalf("got %d edges, want %d: %+v", len(graph), len(want), graph)
+	}
+	seen := make(map[string]struct{}, len(graph))
+	for _, e := range graph {
+		if e.FromDocumentID != id {
+			t.Errorf("FromDocumentID = %q, want %q", e.FromDocumentID, id)
+		}
+		if e.ToDocumentID != e.Title {
+			t.Errorf("ToDocumentID = %q, want title %q", e.ToDocumentID, e.Title)
+		}
+		if e.Title == "bare" {
+			t.Errorf("bare tags list must not become an edge: %+v", e)
+		}
+		if e.Label == "TAG" && e.Title == "front" {
+			t.Errorf("front matter tag leaked into TAG: %+v", e)
+		}
+		if e.Label == "FRONTMATTER_TAG" && e.Title == "body" {
+			t.Errorf("body tag leaked into FRONTMATTER_TAG: %+v", e)
+		}
+		seen[e.Label+"\x00"+e.Title] = struct{}{}
+	}
+	for _, w := range want {
+		if _, ok := seen[w.Label+"\x00"+w.Title]; !ok {
+			t.Errorf("missing %s %q in %+v", w.Label, w.Title, graph)
+		}
+	}
+}
+
+func TestBuildGraphFrontMatterSkipsDocumentsWithoutID(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:       "",
+			Name:     "post",
+			Metadata: json.RawMessage(`{"see":"[[note]] #person [x](https://example.com)"}`),
+		},
+	})
+	if len(graph) != 0 {
+		t.Errorf("documents without an ID must be skipped, got %+v", graph)
+	}
+}
+
+func TestBuildGraphFrontMatterBadMetadata(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:          "11111111-1111-1111-1111-111111111111",
+			Name:        "post",
+			RawMarkdown: "See [[note]].",
+			Metadata:    json.RawMessage(`not json`),
+		},
+		{ID: "22222222-2222-2222-2222-222222222222", Name: "note"},
+	})
+	if len(graph) != 1 {
+		t.Fatalf("expected the body edge only, got %d: %+v", len(graph), graph)
+	}
+	for _, e := range graph {
+		if e.Label != "INTERNAL" {
+			t.Errorf("edge = %+v, want INTERNAL", e)
 		}
 	}
 }

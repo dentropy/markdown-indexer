@@ -171,6 +171,36 @@ func TestScanIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestScanInlineTags(t *testing.T) {
+	dir := t.TempDir()
+	writeMD(t, dir, "note.md", "---\nuuid: 11111111-1111-1111-1111-111111111111\ntags:\n  - from-yaml\n---\n\n# Title\n\nSee #project and [[other]].\n\n"+
+		"```\n#not-a-tag\n```\n")
+	writeMD(t, dir, "other.md", "---\nuuid: 22222222-2222-2222-2222-222222222222\n---\n\nOther.\n")
+
+	ix, err := Scan(dir, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ix.Edges) != 2 {
+		t.Fatalf("expected a wikilink and one tag edge, got %d: %+v", len(ix.Edges), ix.Edges)
+	}
+	var sawLink, sawTag bool
+	for _, e := range ix.Edges {
+		if e.ToDocumentID == "from-yaml" || e.Title == "from-yaml" || e.Title == "not-a-tag" {
+			t.Errorf("front matter and fenced text must not become edges, got %+v", e)
+		}
+		if e.Label == "INTERNAL" && e.FromDocumentID == "11111111-1111-1111-1111-111111111111" && e.ToDocumentID == "22222222-2222-2222-2222-222222222222" {
+			sawLink = true
+		}
+		if e.Label == "TAG" && e.Title == "project" && e.ToDocumentID == "project" {
+			sawTag = true
+		}
+	}
+	if !sawLink || !sawTag {
+		t.Errorf("want a resolved wikilink and a TAG edge for project, got %+v", ix.Edges)
+	}
+}
+
 func TestScanMissingDirectory(t *testing.T) {
 	if _, err := Scan(t.TempDir()+"/nope", Options{}); err == nil {
 		t.Fatal("want an error when the vault cannot be walked")

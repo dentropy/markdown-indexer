@@ -27,11 +27,23 @@ _Avoid_: hash, checksum, fingerprint
 ## The graph
 
 **Wikilink**:
-A `[[target]]` reference in a document body.
+A `[[target]]` reference in a document body or in a front matter string.
 _Avoid_: link, internal link
 
+**URL**:
+A link target that starts with a scheme (`https:`, `mailto:`, `ipfs:`). It is kept as written and is not a document name or a path.
+_Avoid_: website, external link, URI
+
+**Tag**:
+A `#name` label in a document's markdown body. Not a document, and not a wikilink. A `#name` in a front matter string is a front matter edge. The front matter `tags` field is not a tag.
+_Avoid_: hashtag, topic, front matter tag
+
+**Front matter edge**:
+A wikilink, markdown link, or `#name` found in a front matter string. Not a body wikilink and not a tag.
+_Avoid_: front matter tag, metadata link
+
 **Edge**:
-One resolved wikilink graph edge (from UUID, to UUID, label, title). Keyed by its content address, so identical edges dedupe.
+One relationship leaving a document: a body wikilink, a body tag, or a front matter edge. Keyed by its content address, so identical edges dedupe.
 _Avoid_: link object, relationship
 
 ## The index
