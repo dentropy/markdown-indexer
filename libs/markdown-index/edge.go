@@ -11,8 +11,8 @@ import (
 // edges share a content address and dedupe to a single entry, so the same
 // vault always yields the same graph.
 type Edge struct {
-	// Label classifies the edge. Body hits are INTERNAL, WEBSITE, or TAG.
-	// Front matter hits are FRONTMATTER_INTERNAL, FRONTMATTER_WEBSITE, or
+	// Label classifies the edge. Body hits are INTERNAL, URL, or TAG.
+	// Front matter hits are FRONTMATTER_INTERNAL, FRONTMATTER_URL, or
 	// FRONTMATTER_TAG, so they do not share an address with a body edge.
 	Label string `json:"label"`
 
@@ -37,12 +37,44 @@ type Edge struct {
 // body edge for the same target.
 const (
 	labelInternal      = "INTERNAL"
-	labelWebsite       = "WEBSITE"
+	labelURL           = "URL"
 	labelTag           = "TAG"
 	labelFrontInternal = "FRONTMATTER_INTERNAL"
-	labelFrontWebsite  = "FRONTMATTER_WEBSITE"
+	labelFrontURL      = "FRONTMATTER_URL"
 	labelFrontTag      = "FRONTMATTER_TAG"
 )
+
+// hasURLScheme reports whether s begins with an absolute-URI scheme, the
+// CommonMark rule: 2–32 characters, an ASCII letter first, then ASCII letters,
+// digits, "+", "-", or ".", then ":". A space right after the colon is a note
+// title ("Design: the indexer"), not a URL. One letter ("C:/Users") is a drive
+// path, not a scheme.
+func hasURLScheme(s string) bool {
+	n := 0
+	for n < len(s) && n < 32 {
+		c := s[n]
+		if n == 0 {
+			if !isASCIILetter(c) {
+				return false
+			}
+		} else if !isSchemeChar(c) {
+			break
+		}
+		n++
+	}
+	if n < 2 || n >= len(s) || s[n] != ':' {
+		return false
+	}
+	return n+1 >= len(s) || s[n+1] != ' '
+}
+
+func isASCIILetter(c byte) bool {
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+}
+
+func isSchemeChar(c byte) bool {
+	return isASCIILetter(c) || (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.'
+}
 
 // wikilinkRegex matches markdown wikilinks: [[target]], [[target#section]],
 // [[target|alias]], and [[target#section|alias]].
@@ -245,8 +277,8 @@ func inlineCodeClose(line string, from, n int) int {
 var markdownLinkRegex = regexp.MustCompile(`\[([^\]\n]*)\]\(([^)\s]+)\)`)
 
 // appendWikilinks appends one edge per [[wikilink]] in content. internal and
-// website select the label pair: body labels, or the front matter pair.
-func appendWikilinks(edges []Edge, content, fromID string, nameToID map[string]string, internal, website string) []Edge {
+// url select the label pair: body labels, or the front matter pair.
+func appendWikilinks(edges []Edge, content, fromID string, nameToID map[string]string, internal, url string) []Edge {
 	matches := wikilinkRegex.FindAllStringSubmatch(content, -1)
 	for _, m := range matches {
 		target := strings.TrimSpace(m[1])
@@ -264,8 +296,8 @@ func appendWikilinks(edges []Edge, content, fromID string, nameToID map[string]s
 		}
 
 		label := internal
-		if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
-			label = website
+		if hasURLScheme(target) {
+			label = url
 		}
 
 		toID := target
@@ -305,8 +337,8 @@ func appendMarkdownLinks(edges []Edge, content, fromID string) []Edge {
 			title = dest
 		}
 		label := labelFrontInternal
-		if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
-			label = labelFrontWebsite
+		if hasURLScheme(dest) {
+			label = labelFrontURL
 		}
 		edges = append(edges, Edge{
 			Label:          label,
@@ -363,7 +395,7 @@ func collectEdges(docs []Document) []Edge {
 		if doc.ID == "" {
 			continue
 		}
-		edges = appendWikilinks(edges, doc.RawMarkdown, doc.ID, nameToID, labelInternal, labelWebsite)
+		edges = appendWikilinks(edges, doc.RawMarkdown, doc.ID, nameToID, labelInternal, labelURL)
 		for _, tag := range markdownTags(doc.RawMarkdown) {
 			edges = append(edges, Edge{
 				Label:          labelTag,
@@ -373,7 +405,7 @@ func collectEdges(docs []Document) []Edge {
 			})
 		}
 		for _, s := range frontMatterStrings(doc.Metadata) {
-			edges = appendWikilinks(edges, s, doc.ID, nameToID, labelFrontInternal, labelFrontWebsite)
+			edges = appendWikilinks(edges, s, doc.ID, nameToID, labelFrontInternal, labelFrontURL)
 			edges = appendMarkdownLinks(edges, s, doc.ID)
 			for _, tag := range markdownTags(s) {
 				edges = append(edges, Edge{

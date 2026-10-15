@@ -315,8 +315,45 @@ func TestBuildGraph(t *testing.T) {
 	}
 
 	find("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "INTERNAL", "note")
-	find("11111111-1111-1111-1111-111111111111", "https://example.com", "WEBSITE", "Example")
+	find("11111111-1111-1111-1111-111111111111", "https://example.com", "URL", "Example")
 	find("22222222-2222-2222-2222-222222222222", "11111111-1111-1111-1111-111111111111", "INTERNAL", "post")
+}
+
+func TestBuildGraphURLScheme(t *testing.T) {
+	cases := []struct {
+		target string
+		label  string
+	}{
+		{"https://example.com", "URL"},
+		{"http://example.com", "URL"},
+		{"HTTP://example.com", "URL"},
+		{"mailto:ada@example.com", "URL"},
+		{"ipfs://bafyrei", "URL"},
+		{"magnet:?xt=urn:btih:abc", "URL"},
+		{"ftp://files.example.com/a.txt", "URL"},
+		{"note", "INTERNAL"},
+		{"reference/nostr-nip-01.md", "INTERNAL"},
+		{"www.example.com", "INTERNAL"},
+		{"Design: the indexer", "INTERNAL"},
+		{"C:/Users/x", "INTERNAL"},
+	}
+	for _, c := range cases {
+		t.Run(c.target, func(t *testing.T) {
+			graph := buildGraph([]Document{{
+				ID:          "11111111-1111-1111-1111-111111111111",
+				Name:        "post",
+				RawMarkdown: "See [[" + c.target + "]].",
+			}})
+			if len(graph) != 1 {
+				t.Fatalf("expected 1 edge, got %d: %+v", len(graph), graph)
+			}
+			for _, e := range graph {
+				if e.Label != c.label || e.ToDocumentID != c.target {
+					t.Errorf("edge = %+v, want %s -> %s", e, c.label, c.target)
+				}
+			}
+		})
+	}
 }
 
 func TestBuildGraphUnresolved(t *testing.T) {
@@ -553,7 +590,7 @@ func TestBuildGraphFrontMatterWikilink(t *testing.T) {
 	find("gone", "gone")
 }
 
-func TestBuildGraphFrontMatterWebsiteWikilink(t *testing.T) {
+func TestBuildGraphFrontMatterURLWikilink(t *testing.T) {
 	graph := buildGraph([]Document{
 		{
 			ID:       "11111111-1111-1111-1111-111111111111",
@@ -565,7 +602,7 @@ func TestBuildGraphFrontMatterWebsiteWikilink(t *testing.T) {
 		t.Fatalf("expected 1 edge, got %d: %+v", len(graph), graph)
 	}
 	for _, e := range graph {
-		if e.Label != "FRONTMATTER_WEBSITE" || e.Title != "Example" || e.ToDocumentID != "https://example.com" {
+		if e.Label != "FRONTMATTER_URL" || e.Title != "Example" || e.ToDocumentID != "https://example.com" {
 			t.Errorf("edge = %+v", e)
 		}
 	}
@@ -576,12 +613,12 @@ func TestBuildGraphFrontMatterMarkdownLinks(t *testing.T) {
 		{
 			ID:       "11111111-1111-1111-1111-111111111111",
 			Name:     "post",
-			Metadata: json.RawMessage(`{"a":"[spec](https://ipld.io/specs)","b":"[local](reference/nostr-nip-01.md)","c":"![](https://example.com/a.png)","d":"![alt](assets/x.png)","e":"[](https://example.com)"}`),
+			Metadata: json.RawMessage(`{"a":"[spec](https://ipld.io/specs)","b":"[local](reference/nostr-nip-01.md)","c":"![](https://example.com/a.png)","d":"![alt](assets/x.png)","e":"[](https://example.com)","f":"[ada](mailto:ada@example.com)"}`),
 		},
 		{ID: "22222222-2222-2222-2222-222222222222", Name: "nostr-nip-01"},
 	})
-	if len(graph) != 3 {
-		t.Fatalf("expected 3 markdown links, got %d: %+v", len(graph), graph)
+	if len(graph) != 4 {
+		t.Fatalf("expected 4 markdown links, got %d: %+v", len(graph), graph)
 	}
 	find := func(label, title, to string) {
 		t.Helper()
@@ -592,9 +629,10 @@ func TestBuildGraphFrontMatterMarkdownLinks(t *testing.T) {
 		}
 		t.Errorf("missing %s %q -> %q", label, title, to)
 	}
-	find("FRONTMATTER_WEBSITE", "spec", "https://ipld.io/specs")
+	find("FRONTMATTER_URL", "spec", "https://ipld.io/specs")
 	find("FRONTMATTER_INTERNAL", "local", "reference/nostr-nip-01.md")
-	find("FRONTMATTER_WEBSITE", "https://example.com", "https://example.com")
+	find("FRONTMATTER_URL", "https://example.com", "https://example.com")
+	find("FRONTMATTER_URL", "ada", "mailto:ada@example.com")
 }
 
 func TestBuildGraphFrontMatterTag(t *testing.T) {

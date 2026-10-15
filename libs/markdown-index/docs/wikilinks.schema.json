@@ -23,13 +23,13 @@
           "type": "string",
           "enum": [
             "INTERNAL",
-            "WEBSITE",
+            "URL",
             "TAG",
             "FRONTMATTER_INTERNAL",
-            "FRONTMATTER_WEBSITE",
+            "FRONTMATTER_URL",
             "FRONTMATTER_TAG"
           ],
-          "description": "WEBSITE when a body wikilink target begins http:// or https://, INTERNAL for every other body wikilink. TAG is an inline #tag in the markdown body. FRONTMATTER_INTERNAL, FRONTMATTER_WEBSITE, and FRONTMATTER_TAG are the same shapes found in a front matter string, including an inline markdown link. TAG and FRONTMATTER_TAG carry the text without # in both title and to_document_id, and neither resolves to a document UUID. A front matter tags list of bare words does not produce a label."
+          "description": "URL when a body wikilink target begins with a URL scheme (CommonMark absolute-URI scheme: 2–32 characters, then a colon), INTERNAL for every other body wikilink. A note title with a colon and a space stays INTERNAL. TAG is an inline #tag in the markdown body. FRONTMATTER_INTERNAL, FRONTMATTER_URL, and FRONTMATTER_TAG are the same shapes found in a front matter string, including an inline markdown link. TAG and FRONTMATTER_TAG carry the text without # in both title and to_document_id, and neither resolves to a document UUID. A front matter tags list of bare words does not produce a label."
         },
         "title": {
           "type": "string",
