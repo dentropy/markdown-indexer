@@ -25,7 +25,14 @@ stable — read the CID when you need an address, not the loop position.
 Each edge's `ToDocumentID` is the target document's UUID when the link resolves
 to a name in the index, and otherwise the raw target text. Only documents with a
 non-empty UUID produce edges. Targets beginning `http://` or `https://` are
-labeled `WEBSITE`; everything else is `INTERNAL`.
+labeled `WEBSITE`; every other wikilink is `INTERNAL`.
+
+An inline `#tag` in the body becomes an edge labeled `TAG`. The tag text,
+without the leading `#`, is both `Title` and `ToDocumentID`. A tag is not
+resolved to a document. Headings (`# Title`), fenced and inline code, wikilink
+section anchors (`[[note#section]]`), and the front matter `tags` field do not
+produce tag edges. `Shared` applies to tag edges the same way it applies to
+wikilinks, because the graph is built from the documents that survive the filter.
 
 ## Narrowing the index
 

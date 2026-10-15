@@ -410,6 +410,124 @@ func TestSharedMetadata(t *testing.T) {
 	}
 }
 
+func TestMarkdownTags(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{"prose", "See #project and #inbox/to-read.", []string{"project", "inbox/to-read"}},
+		{"headings", "# Title\n## Section\n", nil},
+		{"all digits", "#1984", nil},
+		{"digits with a letter", "#y1984", []string{"y1984"}},
+		{"nested digits", "#1984/notes", []string{"1984/notes"}},
+		{"unclosed fence", "open\n```\n#not\n", nil},
+		{"duplicate spelling", "#project #project", []string{"project"}},
+		{"case preserved", "#Tag and #tag", []string{"Tag", "tag"}},
+		{"wikilink section", "[[note#setup]]", nil},
+		{"url fragment", "Visit https://example.com/a#frag", nil},
+		{"inline code", "See `#not` and #yes.", []string{"yes"}},
+		{"backtick fence", "before\n```\n#not\n```\n#yes\n", []string{"yes"}},
+		{"tilde fence", "~~~\n#not\n~~~\n#yes\n", []string{"yes"}},
+		{"front matter text", "tags: [from-yaml]", nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := markdownTags(c.content)
+			if len(got) != len(c.want) {
+				t.Fatalf("markdownTags() = %v, want %v", got, c.want)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Errorf("tag[%d] = %q, want %q", i, got[i], c.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestBuildGraphTags(t *testing.T) {
+	graph := buildGraph([]Document{
+		{ID: "11111111-1111-1111-1111-111111111111", Name: "post", RawMarkdown: "See #project and #inbox/to-read."},
+	})
+	if len(graph) != 2 {
+		t.Fatalf("expected 2 tag edges, got %d", len(graph))
+	}
+	find := func(tag string) {
+		t.Helper()
+		for _, e := range graph {
+			if e.Label == "TAG" && e.Title == tag && e.ToDocumentID == tag && e.FromDocumentID == "11111111-1111-1111-1111-111111111111" {
+				return
+			}
+		}
+		t.Errorf("missing TAG edge %q", tag)
+	}
+	find("project")
+	find("inbox/to-read")
+}
+
+func TestBuildGraphDuplicateTag(t *testing.T) {
+	graph := buildGraph([]Document{
+		{ID: "11111111-1111-1111-1111-111111111111", Name: "post", RawMarkdown: "#project #project"},
+	})
+	if len(graph) != 1 {
+		t.Fatalf("expected 1 tag edge, got %d", len(graph))
+	}
+	for _, e := range graph {
+		if e.Label != "TAG" || e.Title != "project" || e.ToDocumentID != "project" {
+			t.Errorf("edge = %+v, want TAG project", e)
+		}
+	}
+}
+
+func TestBuildGraphHeadingIsNotATag(t *testing.T) {
+	if graph := buildGraph([]Document{{ID: "1", Name: "post", RawMarkdown: "# Post"}}); len(graph) != 0 {
+		t.Errorf("a heading must not become a tag edge, got %d", len(graph))
+	}
+}
+
+func TestBuildGraphTagSkipsDocumentsWithoutID(t *testing.T) {
+	if graph := buildGraph([]Document{{ID: "", Name: "no-id", RawMarkdown: "See #project."}}); len(graph) != 0 {
+		t.Errorf("documents without an ID must be skipped, got %d edges", len(graph))
+	}
+}
+
+func TestBuildGraphWikilinkAndTag(t *testing.T) {
+	graph := buildGraph([]Document{
+		{ID: "11111111-1111-1111-1111-111111111111", Name: "post", RawMarkdown: "See [[note]] and #project."},
+		{ID: "22222222-2222-2222-2222-222222222222", Name: "note", RawMarkdown: "# Note"},
+	})
+	if len(graph) != 2 {
+		t.Fatalf("expected a wikilink and a tag, got %d edges", len(graph))
+	}
+	var sawLink, sawTag bool
+	for _, e := range graph {
+		if e.Label == "INTERNAL" && e.ToDocumentID == "22222222-2222-2222-2222-222222222222" {
+			sawLink = true
+		}
+		if e.Label == "TAG" && e.Title == "project" && e.ToDocumentID == "project" {
+			sawTag = true
+		}
+	}
+	if !sawLink || !sawTag {
+		t.Errorf("want a resolved wikilink and a TAG edge, got %+v", graph)
+	}
+}
+
+func TestBuildGraphFrontMatterTagsAreNotEdges(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:          "11111111-1111-1111-1111-111111111111",
+			Name:        "post",
+			RawMarkdown: "No inline tag.",
+			Metadata:    json.RawMessage(`{"tags":["from-yaml"]}`),
+		},
+	})
+	if len(graph) != 0 {
+		t.Errorf("front matter tags must not become edges, got %+v", graph)
+	}
+}
+
 func TestFilterSharedDocsIdempotent(t *testing.T) {
 	docs := []Document{
 		{RelativePath: "a.md", Metadata: json.RawMessage(`{"share":true}`)},

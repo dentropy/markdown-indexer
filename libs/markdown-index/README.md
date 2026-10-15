@@ -1,14 +1,14 @@
 # markdown-index
 
-Indexes a tree of markdown files into an in-memory index of documents and the
-wikilink edges between them.
+Indexes a tree of markdown files into an in-memory index of documents, the
+wikilink edges between them, and an edge for each inline `#tag`.
 
 ## Use Case
 
-> You have a vault of markdown notes full of `[[wikilinks]]`.  
+> You have a vault of markdown notes full of `[[wikilinks]]` and `#tags`.  
 > You want the documents and the links between them as data, not as a database.  
-> Scan the vault and get a content-addressed index of every document and every
-> resolved wikilink, then hand it to whatever consumes it.  
+> Scan the vault and get a content-addressed index of every document, every
+> resolved wikilink, and every inline tag, then hand it to whatever consumes it.  
 > The vault stays the source of truth: nothing here writes back.
 
 ```go

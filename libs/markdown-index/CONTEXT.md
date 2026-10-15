@@ -30,8 +30,12 @@ _Avoid_: hash, checksum, fingerprint
 A `[[target]]` reference in a document body.
 _Avoid_: link, internal link
 
+**Tag**:
+A `#name` label in a document's markdown body. Not a document, and not a wikilink. The front matter `tags` field is not a tag.
+_Avoid_: hashtag, topic, front matter tag
+
 **Edge**:
-One resolved wikilink graph edge (from UUID, to UUID, label, title). Keyed by its content address, so identical edges dedupe.
+One relationship leaving a document, either a resolved wikilink or a tag. Keyed by its content address, so identical edges dedupe.
 _Avoid_: link object, relationship
 
 ## The index

@@ -1,11 +1,12 @@
 // Package vault indexes a tree of markdown files into an in-memory index of
-// documents and the wikilink edges between them.
+// documents, the wikilink edges between them, and an edge for each inline tag.
 //
 // A vault is a directory tree of markdown files; it is the source of truth for
 // what exists. A document is one markdown file as indexed: its relative path,
 // name, modification time, front matter, front matter content address, raw
 // markdown body, and the UUID read from its front matter. An edge is one
-// resolved wikilink, keyed by its content address so identical edges dedupe.
+// relationship leaving a document, either a resolved wikilink or an inline
+// #tag, keyed by its content address so identical edges dedupe.
 //
 // The index is derived. It is a one-way read of the vault: this package never
 // writes to it.

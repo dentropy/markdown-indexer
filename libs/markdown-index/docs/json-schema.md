@@ -6,7 +6,7 @@ field names are fixed. The schemas are kept as files next to this one:
 | File                                          | Root                                               | One entry          |
 | --------------------------------------------- | -------------------------------------------------- | ------------------ |
 | [documents.schema.json](documents.schema.json) | The document index, keyed by UUID                  | `$defs.document`   |
-| [wikilinks.schema.json](wikilinks.schema.json) | The wikilink graph, keyed by content address       | `$defs.wikilink`   |
+| [wikilinks.schema.json](wikilinks.schema.json) | The graph of wikilinks and inline tags, keyed by content address | `$defs.wikilink`   |
 
 Each file validates both levels: the root is the envelope the CLI prints, and
 `$defs` holds a single entry inside it.
@@ -31,9 +31,12 @@ the `documents.schema.json` root is keyed by. The `$defs.document` shape is
 therefore what a single entry under that key looks like, not the envelope
 itself.
 
-`label` is an enum of the two values the resolver produces today. `title` and
+`label` is an enum of the three values the resolver produces: `INTERNAL`,
+`WEBSITE`, and `TAG`. `TAG` is an inline `#tag` in the body. The text without
+`#` is stored in both `title` and `to_document_id`, and it is not resolved to a
+document UUID. Front matter `tags` does not produce this label. `title` and
 `to_document_id` are free-form on purpose: an unresolved target is raw text,
-which may be a URL, a section anchor, or a typo.
+which may be a URL, a section anchor, a tag, or a typo.
 
 How those fields are addressed is described in
 [Content addressing](content-addressing.md).

@@ -8,7 +8,8 @@
 | **UUID**            | A document's identifier, read from front matter. Its identity, not its path.                                        |
 | **Content address** | The IPLD hash (CIDv1, dag-json codec, sha2-256) of front matter or an edge.                                          |
 | **Wikilink**        | A `[[target]]` reference in a document body.                                                                        |
-| **Edge**            | One resolved wikilink: from UUID, to UUID, label, title. Keyed by content address.                                   |
+| **Tag**             | A `#name` label in a document's markdown body. Not a document, and not a wikilink. The front matter `tags` field is not a tag. |
+| **Edge**            | One relationship leaving a document, either a resolved wikilink or a tag. Keyed by content address.                  |
 | **Index**           | The in-memory collection of documents and edges derived from the vault.                                              |
 | **Problem**         | One structural fault found while indexing or checking: the paths it concerns, and the error that caused it.            |
 
