@@ -373,6 +373,115 @@ func TestBuildGraphUnresolved(t *testing.T) {
 	}
 }
 
+func TestBuildGraphWikilinkEmbedAsset(t *testing.T) {
+	graph := buildGraph([]Document{
+		{ID: "11111111-1111-1111-1111-111111111111", Name: "post", RawMarkdown: "Cover: ![[banner.png]]. Also ![[diagram.png#flow|the flow]]."},
+	})
+	if len(graph) != 2 {
+		t.Fatalf("expected 2 asset embeds, got %d: %+v", len(graph), graph)
+	}
+	find := func(to, title string) {
+		t.Helper()
+		for _, e := range graph {
+			if e.Label == "INTERNAL_ASSET" && e.Title == title && e.ToDocumentID == to && e.FromDocumentID == "11111111-1111-1111-1111-111111111111" {
+				return
+			}
+		}
+		t.Errorf("missing INTERNAL_ASSET %q -> %q", title, to)
+	}
+	find("banner.png", "banner.png")
+	find("diagram.png", "the flow")
+	for _, e := range graph {
+		if e.Label == "INTERNAL" {
+			t.Errorf("an embed must not also produce a plain wikilink edge, got %+v", e)
+		}
+	}
+}
+
+func TestBuildGraphWikilinkEmbedMarkdown(t *testing.T) {
+	graph := buildGraph([]Document{
+		{ID: "11111111-1111-1111-1111-111111111111", Name: "post", RawMarkdown: "Embed ![[note]], ![[note.md]], ![[note#intro|the intro]], and ![[gone]]."},
+		{ID: "22222222-2222-2222-2222-222222222222", Name: "note", RawMarkdown: "# Note"},
+	})
+	if len(graph) != 4 {
+		t.Fatalf("expected 4 markdown embeds, got %d: %+v", len(graph), graph)
+	}
+	find := func(to, title string) {
+		t.Helper()
+		for _, e := range graph {
+			if e.Label == "EMBEDDED_MARKDOWN" && e.Title == title && e.ToDocumentID == to {
+				return
+			}
+		}
+		t.Errorf("missing EMBEDDED_MARKDOWN %q -> %q", title, to)
+	}
+	find("22222222-2222-2222-2222-222222222222", "note")
+	find("22222222-2222-2222-2222-222222222222", "note.md")
+	find("22222222-2222-2222-2222-222222222222", "the intro")
+	find("gone", "gone")
+}
+
+func TestBuildGraphWikilinkEmbedURL(t *testing.T) {
+	graph := buildGraph([]Document{
+		{ID: "11111111-1111-1111-1111-111111111111", Name: "post", RawMarkdown: "![[https://example.com/a.png]]."},
+	})
+	if len(graph) != 1 {
+		t.Fatalf("expected 1 edge, got %d: %+v", len(graph), graph)
+	}
+	for _, e := range graph {
+		if e.Label != "EXTERNAL_ASSET" || e.Title != "https://example.com/a.png" || e.ToDocumentID != "https://example.com/a.png" {
+			t.Errorf("edge = %+v", e)
+		}
+	}
+}
+
+func TestBuildGraphMarkdownImageEmbed(t *testing.T) {
+	graph := buildGraph([]Document{
+		{ID: "11111111-1111-1111-1111-111111111111", Name: "post", RawMarkdown: "![](assets/x.png) and ![alt text](assets/y.png) and ![](https://example.com/a.png). A plain [link](https://example.com) is not an edge."},
+	})
+	if len(graph) != 3 {
+		t.Fatalf("expected 3 image embeds, got %d: %+v", len(graph), graph)
+	}
+	find := func(label, title, to string) {
+		t.Helper()
+		for _, e := range graph {
+			if e.Label == label && e.Title == title && e.ToDocumentID == to {
+				return
+			}
+		}
+		t.Errorf("missing %s %q -> %q", label, title, to)
+	}
+	find("INTERNAL_ASSET", "assets/x.png", "assets/x.png")
+	find("INTERNAL_ASSET", "alt text", "assets/y.png")
+	find("EXTERNAL_ASSET", "https://example.com/a.png", "https://example.com/a.png")
+}
+
+func TestBuildGraphEmbedBodyAndFrontMatter(t *testing.T) {
+	graph := buildGraph([]Document{
+		{
+			ID:          "11111111-1111-1111-1111-111111111111",
+			Name:        "post",
+			RawMarkdown: "Cover: ![[banner.png]].",
+			Metadata:    json.RawMessage(`{"cover":"![[banner.png]]"}`),
+		},
+	})
+	if len(graph) != 2 {
+		t.Fatalf("the same embed in body and front matter must stay 2 edges, got %d: %+v", len(graph), graph)
+	}
+	labels := make(map[string]bool, len(graph))
+	cids := make(map[string]bool, len(graph))
+	for cid, e := range graph {
+		labels[e.Label] = true
+		cids[cid] = true
+	}
+	if !labels["INTERNAL_ASSET"] || !labels["FRONTMATTER_INTERNAL"] {
+		t.Errorf("want INTERNAL_ASSET and FRONTMATTER_INTERNAL, got %v", labels)
+	}
+	if len(cids) != 2 {
+		t.Errorf("the two edges must have distinct content addresses, got %v", cids)
+	}
+}
+
 func TestBuildGraphAliasedTitle(t *testing.T) {
 	graph := buildGraph([]Document{
 		{ID: "11111111-1111-1111-1111-111111111111", Name: "post", RawMarkdown: "See [[note|the note]] and [[note#setup|Setup Guide]]."},

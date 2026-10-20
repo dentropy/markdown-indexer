@@ -34,16 +34,24 @@ _Avoid_: link, internal link
 A link target that starts with a scheme (`https:`, `mailto:`, `ipfs:`). It is kept as written and is not a document name or a path.
 _Avoid_: website, external link, URI
 
+**Asset**:
+An embedded non-markdown target, `![[image.png]]` or `![](assets/x.png)`. Kept as written; not a document, and not indexed.
+_Avoid_: image, attachment, binary
+
+**Markdown embed**:
+A `![[note]]` body embed of another document's content. Classified by the target's shape, not the vault: no file extension or `.md` means markdown. Not a wikilink and not an asset.
+_Avoid_: note embed, transclusion, embedded wikilink
+
 **Tag**:
 A `#name` label in a document's markdown body. Not a document, and not a wikilink. A `#name` in a front matter string is a front matter edge. The front matter `tags` field is not a tag.
 _Avoid_: hashtag, topic, front matter tag
 
 **Front matter edge**:
-A wikilink, markdown link, or `#name` found in a front matter string. Not a body wikilink and not a tag.
+A wikilink, markdown link, or `#name` found in a front matter string. Not a body wikilink, not a body embed, and not a tag. An embed in front matter is not scanned: `![[x]]` is a plain wikilink there and `![](...)` is skipped.
 _Avoid_: front matter tag, metadata link
 
 **Edge**:
-One relationship leaving a document: a body wikilink, a body tag, or a front matter edge. Keyed by its content address, so identical edges dedupe.
+One relationship leaving a document: a body wikilink, a body embed, a body tag, or a front matter edge. Keyed by its content address, so identical edges dedupe.
 _Avoid_: link object, relationship
 
 ## The index

@@ -128,15 +128,18 @@ to a single entry:
 
 | Field              | Description                                                                |
 | ------------------ | -------------------------------------------------------------------------- |
-| `label`            | `INTERNAL`, `URL`, `TAG`, `FRONTMATTER_INTERNAL`, `FRONTMATTER_URL`, or `FRONTMATTER_TAG` |
-| `title`            | The pipe alias, or the raw target when there is none. For a tag, the text without `#`. For a markdown link, the link text. |
+| `label`            | `INTERNAL`, `URL`, `TAG`, `INTERNAL_ASSET`, `EXTERNAL_ASSET`, `EMBEDDED_MARKDOWN`, `FRONTMATTER_INTERNAL`, `FRONTMATTER_URL`, or `FRONTMATTER_TAG` |
+| `title`            | The pipe alias, or the raw target when there is none. For a tag, the text without `#`. For a markdown link, the link text. For an image embed, the alt text. |
 | `from_document_id` | UUID of the document holding the reference                                 |
-| `to_document_id`   | The target's UUID when a wikilink resolves in the index, otherwise the raw target. For a tag, the tag text. |
+| `to_document_id`   | The target's UUID when a wikilink or a markdown embed resolves in the index, otherwise the raw target. For a tag, the tag text. Assets keep the raw target. |
 
 Body wikilinks that begin with a URL scheme (`https://`, `mailto:`, `ipfs://`)
 are `URL`; every other body wikilink is `INTERNAL`. An inline `#tag` in the body
-is `TAG`. The same shapes in front matter strings use the `FRONTMATTER_` labels,
-and an inline markdown link is read only from front matter. Only documents with
+is `TAG`. Body embeds are their own labels: `![[target]]` and `![](destination)`
+are `INTERNAL_ASSET` or `EXTERNAL_ASSET` by the same URL-scheme rule, and a
+`![[target]]` with no extension or a `.md` extension is `EMBEDDED_MARKDOWN`.
+The same shapes in front matter strings use the `FRONTMATTER_` labels, and an
+inline markdown link is read only from front matter. Only documents with
 a non-empty UUID produce edges. Section anchors (`[[target#section]]`) and
 aliases (`[[target|alias]]`) are both understood.
 

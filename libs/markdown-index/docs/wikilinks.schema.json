@@ -9,7 +9,7 @@
   "$defs": {
     "wikilink": {
       "title": "markdown-index wikilink",
-      "description": "One graph edge: a resolved wikilink, an inline tag, or a front matter edge.",
+      "description": "One graph edge: a resolved wikilink, a body embed, an inline tag, or a front matter edge.",
       "type": "object",
       "required": [
         "label",
@@ -25,15 +25,18 @@
             "INTERNAL",
             "URL",
             "TAG",
+            "INTERNAL_ASSET",
+            "EXTERNAL_ASSET",
+            "EMBEDDED_MARKDOWN",
             "FRONTMATTER_INTERNAL",
             "FRONTMATTER_URL",
             "FRONTMATTER_TAG"
           ],
-          "description": "URL when a body wikilink target begins with a URL scheme (CommonMark absolute-URI scheme: 2–32 characters, then a colon), INTERNAL for every other body wikilink. A note title with a colon and a space stays INTERNAL. TAG is an inline #tag in the markdown body. FRONTMATTER_INTERNAL, FRONTMATTER_URL, and FRONTMATTER_TAG are the same shapes found in a front matter string, including an inline markdown link. TAG and FRONTMATTER_TAG carry the text without # in both title and to_document_id, and neither resolves to a document UUID. A front matter tags list of bare words does not produce a label."
+          "description": "URL when a body wikilink target begins with a URL scheme (CommonMark absolute-URI scheme: 2–32 characters, then a colon), INTERNAL for every other body wikilink. A note title with a colon and a space stays INTERNAL. TAG is an inline #tag in the markdown body. Body embeds are separate: ![[target]] and ![](destination) are INTERNAL_ASSET or EXTERNAL_ASSET by the same URL-scheme rule, and a ![[target]] with no file extension or a .md extension is EMBEDDED_MARKDOWN. FRONTMATTER_INTERNAL, FRONTMATTER_URL, and FRONTMATTER_TAG are the same shapes found in a front matter string, including an inline markdown link; a front matter embed is not scanned and follows the plain wikilink or skipped-image rules. TAG and FRONTMATTER_TAG carry the text without # in both title and to_document_id, and neither resolves to a document UUID. A front matter tags list of bare words does not produce a label."
         },
         "title": {
           "type": "string",
-          "description": "The pipe alias when the wikilink has one, otherwise the raw target text. For a markdown link, the link text. For a TAG or FRONTMATTER_TAG edge, the tag text without the leading #."
+          "description": "The pipe alias when the wikilink has one, otherwise the raw target text. For a markdown link, the link text. For an image embed, the alt text. For a TAG or FRONTMATTER_TAG edge, the tag text without the leading #."
         },
         "from_document_id": {
           "type": "string",
@@ -41,7 +44,7 @@
         },
         "to_document_id": {
           "type": "string",
-          "description": "The target's UUID when a wikilink resolves in the index, otherwise the raw target text. A markdown link keeps its destination as written. For a TAG or FRONTMATTER_TAG edge, the tag text, not a document UUID."
+          "description": "The target's UUID when a wikilink or an EMBEDDED_MARKDOWN embed resolves in the index, otherwise the raw target text. A markdown link and an asset embed keep their destination as written; assets are not indexed. For a TAG or FRONTMATTER_TAG edge, the tag text, not a document UUID."
         }
       }
     }

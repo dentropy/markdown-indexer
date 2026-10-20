@@ -2,33 +2,38 @@ package markdownindexer
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
 
-// Edge is one relationship leaving a document: a body wikilink, an inline tag,
-// or the same kind of reference found in a front matter string. Identical
-// edges share a content address and dedupe to a single entry, so the same
-// vault always yields the same graph.
+// Edge is one relationship leaving a document: a body wikilink, a body embed,
+// an inline tag, or the same kind of reference found in a front matter string.
+// Identical edges share a content address and dedupe to a single entry, so the
+// same vault always yields the same graph.
 type Edge struct {
-	// Label classifies the edge. Body hits are INTERNAL, URL, or TAG.
-	// Front matter hits are FRONTMATTER_INTERNAL, FRONTMATTER_URL, or
-	// FRONTMATTER_TAG, so they do not share an address with a body edge.
+	// Label classifies the edge. Body hits are INTERNAL, URL, TAG,
+	// INTERNAL_ASSET, EXTERNAL_ASSET, or EMBEDDED_MARKDOWN. Front matter hits
+	// are FRONTMATTER_INTERNAL, FRONTMATTER_URL, or FRONTMATTER_TAG, so they do
+	// not share an address with a body edge.
 	Label string `json:"label"`
 
 	// Title is the link's display text: the alias when the wikilink has one,
 	// otherwise the target text. For a markdown link it is the link text. For
-	// a tag it is the tag text without the leading #.
+	// an image embed it is the alt text. For a tag it is the tag text without
+	// the leading #.
 	Title string `json:"title"`
 
-	// FromDocumentID is the UUID of the document holding the wikilink, markdown
-	// link, or tag.
+	// FromDocumentID is the UUID of the document holding the wikilink, embed,
+	// markdown link, or tag.
 	FromDocumentID string `json:"from_document_id"`
 
-	// ToDocumentID is the UUID of the target document when a wikilink resolves
-	// to one in the index, and otherwise the raw target text. A markdown link
-	// keeps its destination as written and is not resolved. For a tag it is
-	// the tag text. A tag does not resolve to a document.
+	// ToDocumentID is the UUID of the target document when a wikilink or a
+	// markdown embed resolves to one in the index, and otherwise the raw target
+	// text. A markdown link keeps its destination as written and is not
+	// resolved. An asset embed keeps its target as written; assets are not
+	// indexed. For a tag it is the tag text. A tag does not resolve to a
+	// document.
 	ToDocumentID string `json:"to_document_id"`
 }
 
@@ -36,12 +41,15 @@ type Edge struct {
 // Front matter uses its own labels so a hit there does not collapse into the
 // body edge for the same target.
 const (
-	labelInternal      = "INTERNAL"
-	labelURL           = "URL"
-	labelTag           = "TAG"
-	labelFrontInternal = "FRONTMATTER_INTERNAL"
-	labelFrontURL      = "FRONTMATTER_URL"
-	labelFrontTag      = "FRONTMATTER_TAG"
+	labelInternal         = "INTERNAL"
+	labelURL              = "URL"
+	labelTag              = "TAG"
+	labelInternalAsset    = "INTERNAL_ASSET"
+	labelExternalAsset    = "EXTERNAL_ASSET"
+	labelEmbeddedMarkdown = "EMBEDDED_MARKDOWN"
+	labelFrontInternal    = "FRONTMATTER_INTERNAL"
+	labelFrontURL         = "FRONTMATTER_URL"
+	labelFrontTag         = "FRONTMATTER_TAG"
 )
 
 // hasURLScheme reports whether s begins with an absolute-URI scheme, the
@@ -79,6 +87,16 @@ func isSchemeChar(c byte) bool {
 // wikilinkRegex matches markdown wikilinks: [[target]], [[target#section]],
 // [[target|alias]], and [[target#section|alias]].
 var wikilinkRegex = regexp.MustCompile(`\[\[([^\]\|#]+)(?:#([^\]\|]+))?(?:\|([^\]]+))?\]\]`)
+
+// wikilinkEmbedRegex matches a body wikilink embed: ![[target]],
+// ![[target#section]], ![[target|alias]], and ![[target#section|alias]]. The
+// capture groups are the same as wikilinkRegex.
+var wikilinkEmbedRegex = regexp.MustCompile(`!\[\[([^\]\|#]+)(?:#([^\]\|]+))?(?:\|([^\]]+))?\]\]`)
+
+// wikilinkEmbedMaskRegex matches a whole ![[target]] span so it can be blanked
+// before the plain wikilink pass, which would otherwise re-match the inner
+// [[target]].
+var wikilinkEmbedMaskRegex = regexp.MustCompile(`!\[\[[^\]]*\]\]`)
 
 // EdgeCID returns the CIDv1 (dag-json codec, sha2-256) of an edge serialized as
 // DAG-JSON, which is the key an edge is stored under.
@@ -272,8 +290,8 @@ func inlineCodeClose(line string, from, n int) int {
 
 // markdownLinkRegex matches an inline [text](destination). The destination
 // ends at the first whitespace or closing paren, so a quoted title after the
-// URL is left out. An image embed is this pattern with a leading !; callers
-// drop those.
+// URL is left out. An image embed is this pattern with a leading !; the front
+// matter caller drops those, the body image embed caller emits them.
 var markdownLinkRegex = regexp.MustCompile(`\[([^\]\n]*)\]\(([^)\s]+)\)`)
 
 // appendWikilinks appends one edge per [[wikilink]] in content. internal and
@@ -313,6 +331,108 @@ func appendWikilinks(edges []Edge, content, fromID string, nameToID map[string]s
 		})
 	}
 	return edges
+}
+
+// isMarkdownEmbedTarget reports whether an embed target names markdown rather
+// than an asset: no file extension, or the .md extension in any case.
+func isMarkdownEmbedTarget(target string) bool {
+	ext := strings.ToLower(filepath.Ext(target))
+	return ext == "" || ext == ".md"
+}
+
+// appendWikilinkEmbeds appends one edge per body ![[wikilink embed]] in
+// content. A target beginning with a URL scheme is EXTERNAL_ASSET. A markdown
+// target (no extension or .md) is EMBEDDED_MARKDOWN and resolves through
+// nameToID with a trailing .md trimmed, since document names carry no
+// extension. Every other target is INTERNAL_ASSET and keeps the raw text, as
+// assets are not indexed.
+func appendWikilinkEmbeds(edges []Edge, content, fromID string, nameToID map[string]string) []Edge {
+	matches := wikilinkEmbedRegex.FindAllStringSubmatch(content, -1)
+	for _, m := range matches {
+		target := strings.TrimSpace(m[1])
+		if target == "" {
+			continue
+		}
+
+		alias := ""
+		if len(m) > 3 {
+			alias = strings.TrimSpace(m[3])
+		}
+		title := alias
+		if title == "" {
+			title = target
+		}
+
+		label := labelInternalAsset
+		toID := target
+		switch {
+		case hasURLScheme(target):
+			label = labelExternalAsset
+		case isMarkdownEmbedTarget(target):
+			label = labelEmbeddedMarkdown
+			name := target
+			if len(name) >= 3 && strings.EqualFold(name[len(name)-3:], ".md") {
+				name = name[:len(name)-3]
+			}
+			if id, ok := nameToID[name]; ok {
+				toID = id
+			}
+		}
+
+		edges = append(edges, Edge{
+			Label:          label,
+			Title:          title,
+			FromDocumentID: fromID,
+			ToDocumentID:   toID,
+		})
+	}
+	return edges
+}
+
+// appendMarkdownImageEmbeds appends one body edge per inline image embed
+// ![alt](destination). A destination beginning with a URL scheme is
+// EXTERNAL_ASSET; every other destination is INTERNAL_ASSET and keeps the path
+// as written. Markdown image syntax is never a transclusion, so an embed never
+// becomes EMBEDDED_MARKDOWN. A body markdown link without the leading ! is not
+// scanned and produces no edge.
+func appendMarkdownImageEmbeds(edges []Edge, content, fromID string) []Edge {
+	locs := markdownLinkRegex.FindAllStringSubmatchIndex(content, -1)
+	for _, loc := range locs {
+		if loc[0] == 0 || content[loc[0]-1] != '!' {
+			continue
+		}
+		text := ""
+		if loc[2] >= 0 && loc[3] >= 0 {
+			text = strings.TrimSpace(content[loc[2]:loc[3]])
+		}
+		dest := content[loc[4]:loc[5]]
+		if dest == "" {
+			continue
+		}
+		title := text
+		if title == "" {
+			title = dest
+		}
+		label := labelInternalAsset
+		if hasURLScheme(dest) {
+			label = labelExternalAsset
+		}
+		edges = append(edges, Edge{
+			Label:          label,
+			Title:          title,
+			FromDocumentID: fromID,
+			ToDocumentID:   dest,
+		})
+	}
+	return edges
+}
+
+// maskWikilinkEmbeds blanks every ![[target]] span with spaces, same length, so
+// the plain body wikilink pass does not re-match the inner [[target]].
+func maskWikilinkEmbeds(s string) string {
+	return wikilinkEmbedMaskRegex.ReplaceAllStringFunc(s, func(m string) string {
+		return strings.Repeat(" ", len(m))
+	})
 }
 
 // appendMarkdownLinks appends one front matter edge per inline [text](destination).
@@ -380,10 +500,12 @@ func collectStrings(v any, out *[]string) {
 	}
 }
 
-// collectEdges scans every document for body [[wikilinks]] and inline #tags,
-// then for wikilinks, markdown links, and #tags in front matter strings.
-// Documents without a UUID are skipped, since an edge has to start from a UUID
-// to mean anything.
+// collectEdges scans every document for body [[wikilinks]], body embeds
+// (![[wikilink]] and ![alt](destination)), and inline #tags, then for
+// wikilinks, markdown links, and #tags in front matter strings. Front matter
+// embeds are not scanned: a ![[x]] there is a plain wikilink and ![](...) is
+// skipped, as before. Documents without a UUID are skipped, since an edge has
+// to start from a UUID to mean anything.
 func collectEdges(docs []Document) []Edge {
 	nameToID := make(map[string]string, len(docs))
 	for _, d := range docs {
@@ -395,7 +517,9 @@ func collectEdges(docs []Document) []Edge {
 		if doc.ID == "" {
 			continue
 		}
-		edges = appendWikilinks(edges, doc.RawMarkdown, doc.ID, nameToID, labelInternal, labelURL)
+		edges = appendWikilinkEmbeds(edges, doc.RawMarkdown, doc.ID, nameToID)
+		edges = appendMarkdownImageEmbeds(edges, doc.RawMarkdown, doc.ID)
+		edges = appendWikilinks(edges, maskWikilinkEmbeds(doc.RawMarkdown), doc.ID, nameToID, labelInternal, labelURL)
 		for _, tag := range markdownTags(doc.RawMarkdown) {
 			edges = append(edges, Edge{
 				Label:          labelTag,
