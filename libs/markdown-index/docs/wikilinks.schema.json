@@ -23,16 +23,19 @@
           "type": "string",
           "enum": [
             "INTERNAL",
+            "INTERNAL_MISSING",
             "URL",
             "TAG",
             "INTERNAL_ASSET",
             "EXTERNAL_ASSET",
             "EMBEDDED_MARKDOWN",
+            "EMBEDDED_MARKDOWN_MISSING",
             "FRONTMATTER_INTERNAL",
+            "FRONTMATTER_INTERNAL_MISSING",
             "FRONTMATTER_URL",
             "FRONTMATTER_TAG"
           ],
-          "description": "URL when a body wikilink target begins with a URL scheme (CommonMark absolute-URI scheme: 2–32 characters, then a colon), INTERNAL for every other body wikilink. A note title with a colon and a space stays INTERNAL. TAG is an inline #tag in the markdown body. Body embeds are separate: ![[target]] and ![](destination) are INTERNAL_ASSET or EXTERNAL_ASSET by the same URL-scheme rule, and a ![[target]] with no file extension or a .md extension is EMBEDDED_MARKDOWN. FRONTMATTER_INTERNAL, FRONTMATTER_URL, and FRONTMATTER_TAG are the same shapes found in a front matter string, including an inline markdown link; a front matter embed is not scanned and follows the plain wikilink or skipped-image rules. TAG and FRONTMATTER_TAG carry the text without # in both title and to_document_id, and neither resolves to a document UUID. A front matter tags list of bare words does not produce a label."
+          "description": "URL when a body wikilink target begins with a URL scheme (CommonMark absolute-URI scheme: 2–32 characters, then a colon), INTERNAL for every other body wikilink that resolves to a document, INTERNAL_MISSING if it does not resolve. A note title with a colon and a space stays INTERNAL or INTERNAL_MISSING. TAG is an inline #tag in the markdown body. Body embeds are separate: ![[target]] and ![](destination) are INTERNAL_ASSET or EXTERNAL_ASSET by the same URL-scheme rule, and a ![[target]] with no file extension or a .md extension is EMBEDDED_MARKDOWN if it resolves to a document, EMBEDDED_MARKDOWN_MISSING if it does not. FRONTMATTER_INTERNAL, FRONTMATTER_INTERNAL_MISSING, FRONTMATTER_URL, and FRONTMATTER_TAG are the same shapes found in a front matter string, including an inline markdown link; a front matter embed is not scanned and follows the plain wikilink or skipped-image rules. TAG and FRONTMATTER_TAG carry the text without # in both title and to_document_id, and neither resolves to a document UUID. A front matter tags list of bare words does not produce a label."
         },
         "title": {
           "type": "string",
