@@ -41,15 +41,18 @@ type Edge struct {
 // Front matter uses its own labels so a hit there does not collapse into the
 // body edge for the same target.
 const (
-	labelInternal         = "INTERNAL"
-	labelURL              = "URL"
-	labelTag              = "TAG"
-	labelInternalAsset    = "INTERNAL_ASSET"
-	labelExternalAsset    = "EXTERNAL_ASSET"
-	labelEmbeddedMarkdown = "EMBEDDED_MARKDOWN"
-	labelFrontInternal    = "FRONTMATTER_INTERNAL"
-	labelFrontURL         = "FRONTMATTER_URL"
-	labelFrontTag         = "FRONTMATTER_TAG"
+	labelInternal             = "INTERNAL"
+	labelInternalMissing      = "INTERNAL_MISSING"
+	labelURL                  = "URL"
+	labelTag                  = "TAG"
+	labelInternalAsset        = "INTERNAL_ASSET"
+	labelExternalAsset        = "EXTERNAL_ASSET"
+	labelEmbeddedMarkdown     = "EMBEDDED_MARKDOWN"
+	labelEmbeddedMarkdownMissing = "EMBEDDED_MARKDOWN_MISSING"
+	labelFrontInternal        = "FRONTMATTER_INTERNAL"
+	labelFrontInternalMissing = "FRONTMATTER_INTERNAL_MISSING"
+	labelFrontURL             = "FRONTMATTER_URL"
+	labelFrontTag             = "FRONTMATTER_TAG"
 )
 
 // hasURLScheme reports whether s begins with an absolute-URI scheme, the
@@ -319,8 +322,16 @@ func appendWikilinks(edges []Edge, content, fromID string, nameToID map[string]s
 		}
 
 		toID := target
+		resolved := false
 		if id, ok := nameToID[target]; ok {
 			toID = id
+			resolved = true
+		}
+		if label == labelInternal && !resolved {
+			label = labelInternalMissing
+		}
+		if label == labelFrontInternal && !resolved {
+			label = labelFrontInternalMissing
 		}
 
 		edges = append(edges, Edge{
@@ -376,6 +387,8 @@ func appendWikilinkEmbeds(edges []Edge, content, fromID string, nameToID map[str
 			}
 			if id, ok := nameToID[name]; ok {
 				toID = id
+			} else {
+				label = labelEmbeddedMarkdownMissing
 			}
 		}
 

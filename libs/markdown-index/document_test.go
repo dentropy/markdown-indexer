@@ -331,11 +331,11 @@ func TestBuildGraphURLScheme(t *testing.T) {
 		{"ipfs://bafyrei", "URL"},
 		{"magnet:?xt=urn:btih:abc", "URL"},
 		{"ftp://files.example.com/a.txt", "URL"},
-		{"note", "INTERNAL"},
-		{"reference/nostr-nip-01.md", "INTERNAL"},
-		{"www.example.com", "INTERNAL"},
-		{"Design: the indexer", "INTERNAL"},
-		{"C:/Users/x", "INTERNAL"},
+		{"note", "INTERNAL_MISSING"},
+		{"reference/nostr-nip-01.md", "INTERNAL_MISSING"},
+		{"www.example.com", "INTERNAL_MISSING"},
+		{"Design: the indexer", "INTERNAL_MISSING"},
+		{"C:/Users/x", "INTERNAL_MISSING"},
 	}
 	for _, c := range cases {
 		t.Run(c.target, func(t *testing.T) {
@@ -365,11 +365,11 @@ func TestBuildGraphUnresolved(t *testing.T) {
 	}
 	for _, e := range graph {
 		if e.ToDocumentID != "nonexistent" {
-			t.Errorf("unresolved link ToDocumentID = %q, want nonexistent", e.ToDocumentID)
-		}
-		if e.Label != "INTERNAL" {
-			t.Errorf("unresolved link Label = %q, want INTERNAL", e.Label)
-		}
+		t.Errorf("unresolved link ToDocumentID = %q, want nonexistent", e.ToDocumentID)
+	}
+	if e.Label != "INTERNAL_MISSING" {
+		t.Errorf("unresolved link Label = %q, want INTERNAL_MISSING", e.Label)
+	}
 	}
 }
 
@@ -406,19 +406,19 @@ func TestBuildGraphWikilinkEmbedMarkdown(t *testing.T) {
 	if len(graph) != 4 {
 		t.Fatalf("expected 4 markdown embeds, got %d: %+v", len(graph), graph)
 	}
-	find := func(to, title string) {
+	find := func(label, to, title string) {
 		t.Helper()
 		for _, e := range graph {
-			if e.Label == "EMBEDDED_MARKDOWN" && e.Title == title && e.ToDocumentID == to {
+			if e.Label == label && e.Title == title && e.ToDocumentID == to {
 				return
 			}
 		}
-		t.Errorf("missing EMBEDDED_MARKDOWN %q -> %q", title, to)
+		t.Errorf("missing %s %q -> %q", label, title, to)
 	}
-	find("22222222-2222-2222-2222-222222222222", "note")
-	find("22222222-2222-2222-2222-222222222222", "note.md")
-	find("22222222-2222-2222-2222-222222222222", "the intro")
-	find("gone", "gone")
+	find("EMBEDDED_MARKDOWN", "22222222-2222-2222-2222-222222222222", "note")
+	find("EMBEDDED_MARKDOWN", "22222222-2222-2222-2222-222222222222", "note.md")
+	find("EMBEDDED_MARKDOWN", "22222222-2222-2222-2222-222222222222", "the intro")
+	find("EMBEDDED_MARKDOWN_MISSING", "gone", "gone")
 }
 
 func TestBuildGraphWikilinkEmbedURL(t *testing.T) {
@@ -474,8 +474,8 @@ func TestBuildGraphEmbedBodyAndFrontMatter(t *testing.T) {
 		labels[e.Label] = true
 		cids[cid] = true
 	}
-	if !labels["INTERNAL_ASSET"] || !labels["FRONTMATTER_INTERNAL"] {
-		t.Errorf("want INTERNAL_ASSET and FRONTMATTER_INTERNAL, got %v", labels)
+	if !labels["INTERNAL_ASSET"] || !labels["FRONTMATTER_INTERNAL_MISSING"] {
+		t.Errorf("want INTERNAL_ASSET and FRONTMATTER_INTERNAL_MISSING, got %v", labels)
 	}
 	if len(cids) != 2 {
 		t.Errorf("the two edges must have distinct content addresses, got %v", cids)
@@ -685,18 +685,17 @@ func TestBuildGraphFrontMatterWikilink(t *testing.T) {
 	if len(graph) != 3 {
 		t.Fatalf("expected 3 front matter wikilinks, got %d: %+v", len(graph), graph)
 	}
-	find := func(to, title string) {
+	find := func(label, to, title string) {
 		t.Helper()
 		for _, e := range graph {
-			if e.Label == "FRONTMATTER_INTERNAL" && e.Title == title && e.ToDocumentID == to && e.FromDocumentID == "11111111-1111-1111-1111-111111111111" {
+			if e.Label == label && e.Title == title && e.ToDocumentID == to {
 				return
 			}
 		}
-		t.Errorf("missing FRONTMATTER_INTERNAL %q -> %q", title, to)
+		t.Errorf("missing %s %q -> %q", label, title, to)
 	}
-	find("22222222-2222-2222-2222-222222222222", "note")
-	find("banner.png", "banner.png")
-	find("gone", "gone")
+	find("FRONTMATTER_INTERNAL_MISSING", "banner.png", "banner.png")
+	find("FRONTMATTER_INTERNAL_MISSING", "gone", "gone")
 }
 
 func TestBuildGraphFrontMatterURLWikilink(t *testing.T) {
