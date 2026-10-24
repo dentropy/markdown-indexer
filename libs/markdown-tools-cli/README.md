@@ -37,6 +37,30 @@ non-zero. Every operation is a one-shot scan; there is no daemon and no database
 ./markdown-tools-cli -dir testdata/vault -validate # structural problems
 ```
 
+``` bash
+# For Example
+export VAULT_DIR=`~/Vault`
+
+# Add frontmatter to all the markdown documents so they have a UUID
+./markdown-tools-cli -dir $VAULT_DIR -initfrontmatter
+
+# May require -f for force
+./markdown-tools-cli -dir $VAULT_DIR -initfrontmatter -f
+
+# Set all documents to in the directory to be shared
+./markdown-tools-cli -dir $VAULT_DIR share true
+
+# Get the markdown directory as a JSON Struct
+./markdown-tools-cli -dir $VAULT_DIR
+
+# Get the wikilinks
+./markdown-tools-cli -dir $VAULT_DIR -wikilinks
+
+# Get the backlinks
+./markdown-tools-cli -dir $VAULT_DIR -backlinks
+
+```
+
 | Flag         | Default    | Description                                                    |
 | ------------ | ---------- | -------------------------------------------------------------- |
 | `-dir`       | `.`        | Directory to scan for markdown files                           |
