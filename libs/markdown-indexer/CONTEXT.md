@@ -1,4 +1,4 @@
-# markdown-index
+# markdown-indexer
 
 Indexes a markdown vault into content-addressed documents and a wikilink edge graph. This is the domain model of the `markdownindexer` package; the terms below are the ones its API uses.
 

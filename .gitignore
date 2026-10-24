@@ -1,3 +1,4 @@
+libs/*/markdown-tools-cli
 libs/*/markdown-indexer-cli
 libs/*/out.json
 libs/*/graph.json

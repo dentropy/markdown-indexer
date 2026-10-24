@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dentropy/markdown-indexer/libs/markdown-index"
+	"github.com/dentropy/markdown-indexer/libs/markdown-indexer"
 )
 
 func TestRunWithCheckDups(t *testing.T) {
@@ -69,54 +69,197 @@ func writeTestMD(t *testing.T, dir, name, content string) {
 	}
 }
 
-func TestSetFrontMatterUUID(t *testing.T) {
-	newID := "99999999-8888-7777-6666-555555555555"
-	cases := []struct {
-		name    string
-		in      string
-		wantIn  string
-		wantOut string
-	}{
-		{
-			name:    "replaces value, keeps rest of front matter",
-			in:      "---\nuuid: old-id\ntitle: Keep\n---\n\nBody.\n",
-			wantIn:  "old-id",
-			wantOut: "---\nuuid: " + newID + "\ntitle: Keep\n---\n\nBody.\n",
-		},
-		{
-			name:    "preserves quoted key",
-			in:      "---\n\"uuid\": old-id\nother: 1\n---\n\nBody.\n",
-			wantIn:  "old-id",
-			wantOut: "---\n\"uuid\": " + newID + "\nother: 1\n---\n\nBody.\n",
-		},
-		{
-			name:    "ignores nested key, appends top-level one",
-			in:      "---\nuuid-old: no\nuuid-meta:\n  uuid: old-id\nother: 1\n---\n\nBody.\n",
-			wantIn:  "uuid-meta",
-			wantOut: "---\nuuid-old: no\nuuid-meta:\n  uuid: old-id\nother: 1\nuuid: " + newID + "\n---\n\nBody.\n",
-		},
-		{
-			name:    "no front matter is unchanged",
-			in:      "Just a body.\n",
-			wantIn:  "Just a body.",
-			wantOut: "Just a body.\n",
-		},
-		{
-			name:    "missing key appends to front matter",
-			in:      "---\ntitle: X\n---\n\nBody.\n",
-			wantIn:  "title",
-			wantOut: "---\ntitle: X\nuuid: " + newID + "\n---\n\nBody.\n",
-		},
+func parseTestDoc(t *testing.T, dir, name, idKey string) (markdownindexer.Document, string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if !strings.Contains(c.in, c.wantIn) {
-				t.Fatalf("bad test setup: %q does not contain %q", c.in, c.wantIn)
-			}
-			if got := string(setFrontMatterUUID([]byte(c.in), "uuid", newID)); got != c.wantOut {
-				t.Errorf("setFrontMatterUUID =\n%s\nwant\n%s", got, c.wantOut)
-			}
-		})
+	doc, err := markdownindexer.Parse(data, name, time.Time{}, idKey)
+	if err != nil {
+		t.Fatalf("parse %s: %v", name, err)
+	}
+	return doc, string(data)
+}
+
+func TestInitFrontMatter(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "no-frontmatter.md", "Body only.\n")
+	writeTestMD(t, dir, "missing-keys.md", "---\ntitle: Missing\n---\n\nBody.\n")
+	writeTestMD(t, dir, "already-shared.md", "---\nuuid: keep-me\nshare: true\n---\n\nBody.\n")
+	writeTestMD(t, dir, "nested/note.md", "---\nuuid: nested-id\nshare: false\n---\n\nNested.\n")
+
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-initfrontmatter"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+	}
+
+	doc, raw := parseTestDoc(t, dir, "no-frontmatter.md", "uuid")
+	if doc.ID == "" {
+		t.Errorf("no-frontmatter.md should get a UUID: %s", raw)
+	}
+	if _, ok := doc.FrontMatter()["share"]; !ok {
+		t.Errorf("no-frontmatter.md should get a share key: %s", raw)
+	}
+	if markdownindexer.SharedMetadata(doc.Metadata) {
+		t.Errorf("no-frontmatter.md share should default to false: %s", raw)
+	}
+	if !strings.Contains(raw, "Body only.") {
+		t.Errorf("no-frontmatter.md lost its body: %s", raw)
+	}
+
+	doc, raw = parseTestDoc(t, dir, "missing-keys.md", "uuid")
+	if doc.ID == "" {
+		t.Errorf("missing-keys.md should get a UUID: %s", raw)
+	}
+	if _, ok := doc.FrontMatter()["share"]; !ok {
+		t.Errorf("missing-keys.md should get a share key: %s", raw)
+	}
+	if markdownindexer.SharedMetadata(doc.Metadata) {
+		t.Errorf("missing-keys.md share should default to false: %s", raw)
+	}
+	if !strings.Contains(raw, "title: Missing") {
+		t.Errorf("missing-keys.md lost its front matter: %s", raw)
+	}
+
+	doc, raw = parseTestDoc(t, dir, "already-shared.md", "uuid")
+	if doc.ID != "keep-me" {
+		t.Errorf("already-shared.md should keep its UUID, got %q: %s", doc.ID, raw)
+	}
+	if !markdownindexer.SharedMetadata(doc.Metadata) {
+		t.Errorf("already-shared.md should keep share: true: %s", raw)
+	}
+
+	doc, raw = parseTestDoc(t, dir, "nested/note.md", "uuid")
+	if doc.ID != "nested-id" {
+		t.Errorf("nested/note.md should keep its UUID, got %q: %s", doc.ID, raw)
+	}
+	if markdownindexer.SharedMetadata(doc.Metadata) {
+		t.Errorf("nested/note.md should keep share: false: %s", raw)
+	}
+}
+
+func TestInitFrontMatterShareTrue(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "missing-share.md", "---\nuuid: one\n---\n\nBody.\n")
+	writeTestMD(t, dir, "existing-false.md", "---\nuuid: two\nshare: false\n---\n\nBody.\n")
+
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-initfrontmatter", "-share=true"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+	}
+
+	doc, raw := parseTestDoc(t, dir, "missing-share.md", "uuid")
+	if !markdownindexer.SharedMetadata(doc.Metadata) {
+		t.Errorf("missing-share.md should get share: true: %s", raw)
+	}
+	doc, raw = parseTestDoc(t, dir, "existing-false.md", "uuid")
+	if markdownindexer.SharedMetadata(doc.Metadata) {
+		t.Errorf("existing-false.md should keep share: false: %s", raw)
+	}
+}
+
+func TestInitFrontMatterCustomIDKey(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "note.md", "---\ntitle: Custom\n---\n\nBody.\n")
+
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-initfrontmatter", "-idkey", "id"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+	}
+
+	doc, raw := parseTestDoc(t, dir, "note.md", "id")
+	if doc.ID == "" {
+		t.Errorf("note.md should get an id key: %s", raw)
+	}
+	if strings.Contains(raw, "uuid:") {
+		t.Errorf("note.md should use the configured id key, not uuid: %s", raw)
+	}
+}
+
+func TestSetShareRecursive(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "no-frontmatter.md", "Body only.\n")
+	writeTestMD(t, dir, "shared.md", "---\nuuid: keep-a\nshare: true\n---\n\nShared body.\n")
+	writeTestMD(t, dir, "nested/private.md", "---\nuuid: keep-b\nshare: false\n---\n\nPrivate body.\n")
+	writeTestMD(t, dir, "nested/deep/upper.md", "---\nuuid: keep-c\nshare: TRUE\n---\n\nUpper body.\n")
+
+	run := func(share string) {
+		t.Helper()
+		var stdout, stderr strings.Builder
+		if err := runWith([]string{"-dir", dir, "-setshare", "-share=" + share}, &stdout, &stderr, strings.NewReader("")); err != nil {
+			t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+		}
+	}
+
+	run("false")
+	for _, name := range []string{"no-frontmatter.md", "shared.md", "nested/private.md", "nested/deep/upper.md"} {
+		doc, raw := parseTestDoc(t, dir, name, "uuid")
+		if doc.ID == "" {
+			t.Errorf("%s should have a UUID: %s", name, raw)
+		}
+		if _, ok := doc.FrontMatter()["share"]; !ok {
+			t.Errorf("%s should have a share key: %s", name, raw)
+		}
+		if markdownindexer.SharedMetadata(doc.Metadata) {
+			t.Errorf("%s should be share: false: %s", name, raw)
+		}
+	}
+	for name, want := range map[string]string{
+		"shared.md":            "keep-a",
+		"nested/private.md":    "keep-b",
+		"nested/deep/upper.md": "keep-c",
+	} {
+		doc, raw := parseTestDoc(t, dir, name, "uuid")
+		if doc.ID != want {
+			t.Errorf("%s should keep UUID %q, got %q: %s", name, want, doc.ID, raw)
+		}
+	}
+	for name, want := range map[string]string{
+		"shared.md":            "Shared body.",
+		"nested/private.md":    "Private body.",
+		"nested/deep/upper.md": "Upper body.",
+	} {
+		_, raw := parseTestDoc(t, dir, name, "uuid")
+		if !strings.Contains(raw, want) {
+			t.Errorf("%s lost its body: %s", name, raw)
+		}
+	}
+
+	before := make(map[string]string)
+	for _, name := range []string{"no-frontmatter.md", "shared.md", "nested/private.md", "nested/deep/upper.md"} {
+		_, raw := parseTestDoc(t, dir, name, "uuid")
+		before[name] = raw
+	}
+	run("false")
+	for name, want := range before {
+		_, raw := parseTestDoc(t, dir, name, "uuid")
+		if raw != want {
+			t.Errorf("%s changed on a repeated -setshare run:\nbefore %q\nafter  %q", name, want, raw)
+		}
+	}
+
+	run("true")
+	for _, name := range []string{"no-frontmatter.md", "shared.md", "nested/private.md", "nested/deep/upper.md"} {
+		doc, raw := parseTestDoc(t, dir, name, "uuid")
+		if !markdownindexer.SharedMetadata(doc.Metadata) {
+			t.Errorf("%s should be share: true: %s", name, raw)
+		}
+	}
+}
+
+func TestWriteFlagValidation(t *testing.T) {
+	cases := [][]string{
+		{"-dir", ".", "-setshare"},
+		{"-dir", ".", "-initfrontmatter", "-setshare", "-share=true"},
+		{"-dir", ".", "-stripdups", "-initfrontmatter"},
+		{"-dir", ".", "-share=true"},
+		{"-dir", ".", "-initfrontmatter", "-share=maybe"},
+	}
+	for _, args := range cases {
+		if _, err := parseFlags(args); err == nil {
+			t.Errorf("parseFlags(%v) should fail", args)
+		}
 	}
 }
 

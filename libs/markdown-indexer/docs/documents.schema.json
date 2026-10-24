@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "markdown-index document index",
+  "title": "markdown-indexer document index",
   "description": "The document index: every indexed document keyed by its UUID. Documents with no front matter land under the empty key.",
   "type": "object",
   "additionalProperties": {
@@ -8,7 +8,7 @@
   },
   "$defs": {
     "document": {
-      "title": "markdown-index document",
+      "title": "markdown-indexer document",
       "description": "One markdown file as indexed. Its identity is its UUID, not its path.",
       "type": "object",
       "required": [

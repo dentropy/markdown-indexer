@@ -1,20 +1,22 @@
-# markdown-indexer-cli
+# markdown-tools-cli
 
 A command line tool over a markdown vault: it indexes the vault into documents
-and a wikilink graph and prints them as JSON.
+and a wikilink graph, prints them as JSON, and applies front matter fixes.
 
 The indexing is not part of this module. It lives in the sibling
-[`libs/markdown-index`](../markdown-index), whose package is named
-`markdownindexer`. This module depends on it at `v0.0.1`.
+[`libs/markdown-indexer`](../markdown-indexer), whose package is named
+`markdownindexer`. The writes live in [`libs/markdown-tools`](../markdown-tools),
+whose package is named `markdowntools`. This CLI composes both; it adds flags,
+prompts, and output, not indexing or rewriting logic.
 
 ```sh
-go install github.com/dentropy/markdown-indexer/libs/markdown-indexer-cli@latest
+go install github.com/dentropy/markdown-indexer/libs/markdown-tools-cli@latest
 ```
 
-That puts a `markdown-indexer-cli` binary on your `PATH`. Or from a clone:
+That puts a `markdown-tools-cli` binary on your `PATH`. Or from a clone:
 
 ```sh
-go build -o markdown-indexer-cli .
+go build -o markdown-tools-cli .
 ```
 
 Requires Go 1.27.
@@ -22,7 +24,7 @@ Requires Go 1.27.
 ## Usage
 
 ```sh
-./markdown-indexer-cli [flags]
+./markdown-tools-cli [flags]
 ```
 
 The default operation writes the document index as JSON. `-wikilinks` writes the
@@ -30,9 +32,9 @@ wikilink graph instead, and `-vaultcheck` reports structural problems and exits
 non-zero. Every operation is a one-shot scan; there is no daemon and no database.
 
 ```sh
-./markdown-indexer-cli -dir examples -all              # document JSON list
-./markdown-indexer-cli -dir examples -wikilinks        # wikilink graph JSON
-./markdown-indexer-cli -dir testdata/vault -vaultcheck # structural problems
+./markdown-tools-cli -dir examples -all              # document JSON list
+./markdown-tools-cli -dir examples -wikilinks        # wikilink graph JSON
+./markdown-tools-cli -dir testdata/vault -vaultcheck # structural problems
 ```
 
 | Flag         | Default    | Description                                                    |
@@ -46,6 +48,9 @@ non-zero. Every operation is a one-shot scan; there is no daemon and no database
 | `-vaultcheck`| `false`    | Report broken front matter and duplicate/missing UUIDs          |
 | `-checkdups` | `false`    | Report documents sharing a UUID, after writing the index       |
 | `-stripdups` | `false`    | Assign a fresh UUID to every document sharing one (prompts)    |
+| `-initfrontmatter` | `false` | Add missing `uuid` and `share` keys; `share` defaults to `false` |
+| `-setshare`  | `false`    | Set `share` on every matched document and add missing UUIDs; requires `-share` |
+| `-share`     | *(unset)*  | `true` or `false`, used by `-initfrontmatter` and `-setshare`  |
 | `-force`/`-F`| `false`    | Skip documents with broken front matter instead of aborting    |
 | `-quiet`/`-q`| `false`    | Print only the JSON, with no progress notices on stderr        |
 | `-memusage`  | `false`    | Print an estimate of the memory the document slice occupies    |
@@ -56,8 +61,8 @@ By default the CLI loads only documents whose front matter sets `share: true`.
 Pass `-all` to load the whole vault.
 
 ```sh
-./markdown-indexer-cli -dir .        # only the shared half
-./markdown-indexer-cli -dir . -all   # every document
+./markdown-tools-cli -dir .        # only the shared half
+./markdown-tools-cli -dir . -all   # every document
 ```
 
 `share` accepts a JSON boolean, a quoted string, or anything
@@ -71,6 +76,43 @@ The structural commands mostly ignore the lens: `-vaultcheck` and `-stripdups`
 operate on the whole vault, so CI still sees problems in documents that are not
 shared. `-checkdups` is the exception: it reports on what was indexed, so it
 needs `-all` to see unshared documents.
+
+## Writing front matter
+
+Two flags add or change front matter in place. Both walk every markdown file the
+scan matches (`-pattern`, recursively by default) under `-dir`.
+
+`-initfrontmatter` adds what is missing and leaves existing values alone:
+
+```sh
+# Give every document a UUID and share: false if it is missing either.
+./markdown-tools-cli -dir notes -initfrontmatter
+
+# Same, but missing share keys become true. Existing share values stay put.
+./markdown-tools-cli -dir notes -initfrontmatter -share=true
+```
+
+`-setshare` forces the permission and still fills in missing UUIDs. Existing
+UUIDs and the rest of each file's front matter are preserved:
+
+```sh
+# Set share: false on every document under notes/, recursively.
+./markdown-tools-cli -dir notes -setshare -share=false
+
+# Set share: true on a single folder.
+./markdown-tools-cli -dir notes/public -setshare -share=true
+```
+
+`-share` takes `true` or `false` (anything `strconv.ParseBool` accepts). It is
+required with `-setshare`; with `-initfrontmatter` it only decides which value
+missing share keys get. The write modes are mutually exclusive with each other
+and with `-stripdups`.
+
+Writes are immediate and unconfirmed: run bulk changes on a copy or from version
+control. Files whose bytes would not change are not rewritten, so repeating a
+command is safe. Broken front matter follows the usual rule: the first bad file
+aborts the run unless `-force` is passed, in which case it is skipped. After the
+rewrite the CLI rescans the vault and writes JSON as usual.
 
 ## Document JSON list
 
@@ -149,7 +191,7 @@ aliases (`[[target|alias]]`) are both understood.
 gate CI:
 
 ```sh
-$ ./markdown-indexer-cli -dir testdata/vault -vaultcheck
+$ ./markdown-tools-cli -dir testdata/vault -vaultcheck
 
 broken-frontmatter.md: broken front matter: parse front matter: yaml: line 1: did not find expected ',' or ']'
 duplicate UUID 77679f2b-... -> duplicate-a.md, duplicate-b.md
@@ -172,11 +214,11 @@ names the file. Pass `-force` (or `-F`) to skip those files instead, logging one
 line each and indexing the rest:
 
 ```sh
-$ ./markdown-indexer-cli -dir testdata/vault
+$ ./markdown-tools-cli -dir testdata/vault
 
 error: vault/broken-frontmatter.md: parse front matter: yaml: line 1: did not find expected ',' or ']'
 
-$ ./markdown-indexer-cli -dir testdata/vault -force -all
+$ ./markdown-tools-cli -dir testdata/vault -force -all
 
 skipping vault/broken-frontmatter.md: parse front matter: yaml: line 1: did not find expected ',' or ']'
 ```
@@ -191,8 +233,8 @@ and pipes into `jq` on its own. `-quiet` (or `-q`) drops those notices when you
 would rather not see them:
 
 ```sh
-$ markdown-indexer-cli -dir . -all -force | jq '.[] | .name'
-$ markdown-indexer-cli -dir . -all -force -q | jq '.[] | .name'
+$ markdown-tools-cli -dir . -all -force | jq '.[] | .name'
+$ markdown-tools-cli -dir . -all -force -q | jq '.[] | .name'
 ```
 
 `-quiet` suppresses progress notices only. A run that fails still says so on
@@ -213,23 +255,23 @@ The commands below run against the two fixture trees in this repo:
   `duplicate.md` and disappears from the index. Use `testdata/vault` when you
   want every file to appear.
 
-Build the binary once and call it `markdown-indexer-cli` below:
+Build the binary once and call it `markdown-tools-cli` below:
 
 ```sh
-go build -o markdown-indexer-cli .
+go build -o markdown-tools-cli .
 ```
 
 ### Basic index
 
 ```sh
 # Every document, as JSON on stdout.
-markdown-indexer-cli -dir testdata/vault -F -all > vault.json
+markdown-tools-cli -dir testdata/vault -F -all > vault.json
 
 # Just the shared documents (the default).
-markdown-indexer-cli -dir testdata/vault -F > shared.json
+markdown-tools-cli -dir testdata/vault -F > shared.json
 
 # One file per pattern, relative to -dir.
-markdown-indexer-cli -dir testdata/vault -pattern 'People/*.md' -F -all
+markdown-tools-cli -dir testdata/vault -pattern 'People/*.md' -F -all
 ```
 
 ### Jumping straight to jq
@@ -239,13 +281,13 @@ Together they give you clean JSON to work with:
 
 ```sh
 # How many documents indexed.
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq 'length'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq 'length'
 
 # Every path.
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[].relativePath'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[].relativePath'
 
 # Name, title, and tags as a table.
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[] | [.name, .metadata.title, (.metadata.tags|tostring)] | @tsv'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[] | [.name, .metadata.title, (.metadata.tags|tostring)] | @tsv'
 ```
 
 ### `-F` on its own versus `-F -q`
@@ -254,17 +296,17 @@ The only difference is stderr. Both give identical stdout:
 
 ```sh
 # You see: skipping vault/broken-frontmatter.md: parse front matter: ...
-markdown-indexer-cli -dir testdata/vault -F -all | jq 'length'
+markdown-tools-cli -dir testdata/vault -F -all | jq 'length'
 
 # You see nothing; stdout is the same 24 documents.
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq 'length'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq 'length'
 ```
 
 `-F` alone is right when you want to know a file was skipped. `-F -q` is right
 when you are piping. To keep the notice but still capture it:
 
 ```sh
-markdown-indexer-cli -dir testdata/vault -F -all 2>skipped.txt | jq 'length'
+markdown-tools-cli -dir testdata/vault -F -all 2>skipped.txt | jq 'length'
 ```
 
 ### Querying front matter
@@ -275,26 +317,26 @@ disagree about shapes, defensive `jq` tends to pay off:
 ```sh
 # Titles, sorted. The select drops files with no front matter at all, whose
 # title comes through as null.
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.title) | .metadata.title] | sort | .[]'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.title) | .metadata.title] | sort | .[]'
 
 # One document by title.
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r 'to_entries[] | select(.value.metadata.title == "Ada Lovelace") | .key'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r 'to_entries[] | select(.value.metadata.title == "Ada Lovelace") | .key'
 
 # Slug built from the title.
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.title) | .metadata.title | ascii_downcase | gsub(" "; "-")'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.title) | .metadata.title | ascii_downcase | gsub(" "; "-")'
 
 # Drafts, and anything unpublished.
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.draft == true) | .relativePath'
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.published == false) | .relativePath'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.draft == true) | .relativePath'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.published == false) | .relativePath'
 
 # Tags written as a YAML list and as a comma-separated string, folded together.
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.tags) | .metadata.tags | if type == "array" then .[] else (gsub(", *";"\n") | split("\n")) end] | flatten | map(select(length > 0)) | unique | sort | .[]'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.tags) | .metadata.tags | if type == "array" then .[] else (gsub(", *";"\n") | split("\n")) end] | flatten | map(select(length > 0)) | unique | sort | .[]'
 ```
 
 `author` has the same problem: some files write a string, some a mapping.
 
 ```sh
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.author) | .metadata.author | if type == "object" then .name else . end] | unique | sort | .[]'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.author) | .metadata.author | if type == "object" then .name else . end] | unique | sort | .[]'
 ```
 
 ### Finding what changed
@@ -304,30 +346,30 @@ matter does. That makes the index a cheap "what did I touch" check:
 
 ```sh
 # Front matter CID per document, truncated for reading.
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r '.[] | [.relativePath, .frontmatter_cid[0:12]] | @tsv'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[] | [.relativePath, .frontmatter_cid[0:12]] | @tsv'
 
 # Documents edited since a given unix timestamp.
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r --argjson cutoff 1789000000 '.[] | select(.modifiedUnix > $cutoff) | .relativePath'
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r --argjson cutoff 1789000000 '.[] | select(.modifiedUnix > $cutoff) | .relativePath'
 ```
 
 ### Walking the wikilink graph
 
 ```sh
 # Every edge as a readable line.
-markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | "\(.from_document_id[0:8]) -> \(.to_document_id[0:8])  \(.title)"'
+markdown-tools-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | "\(.from_document_id[0:8]) -> \(.to_document_id[0:8])  \(.title)"'
 
 # Internal edges only; drop the URL ones.
-markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | select(.label == "INTERNAL") | .title'
+markdown-tools-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | select(.label == "INTERNAL") | .title'
 
 # Aliases that resolve: the title is the pipe alias, not the target.
-markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | select(.title | test("index"; "i")) | .title'
+markdown-tools-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | select(.title | test("index"; "i")) | .title'
 
 # The most-linked-to documents, as a backlink count.
-markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '[.[] | select(.label == "INTERNAL") | .to_document_id] | group_by(.) | map({id: .[0], n: length}) | sort_by(-.n) | .[0:5][] | "\(.n)\t\(.id)"'
+markdown-tools-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '[.[] | select(.label == "INTERNAL") | .to_document_id] | group_by(.) | map({id: .[0], n: length}) | sort_by(-.n) | .[0:5][] | "\(.n)\t\(.id)"'
 
 # Documents nothing links to.
-markdown-indexer-cli -dir testdata/vault -F -q -all -wikilinks > edges.json
-markdown-indexer-cli -dir testdata/vault -F -q -all | jq -r --slurpfile g edges.json '.[] | .key as $me | select([$g[0][] | select(.from_document_id == $me)] | length == 0) | .value.relativePath'
+markdown-tools-cli -dir testdata/vault -F -q -all -wikilinks > edges.json
+markdown-tools-cli -dir testdata/vault -F -q -all | jq -r --slurpfile g edges.json '.[] | .key as $me | select([$g[0][] | select(.from_document_id == $me)] | length == 0) | .value.relativePath'
 ```
 
 ### Finding duplicates
@@ -338,10 +380,10 @@ collisions are filtered out before it ever sees them.
 
 ```sh
 # Reports the deliberate duplicate-a/duplicate-b pair. Exits 1.
-markdown-indexer-cli -dir testdata/vault -F -checkdups -all > /dev/null
+markdown-tools-cli -dir testdata/vault -F -checkdups -all > /dev/null
 
 # Which UUIDs collide.
-markdown-indexer-cli -dir testdata/vault -F -checkdups -all 2>&1 >/dev/null | grep '^duplicate UUID'
+markdown-tools-cli -dir testdata/vault -F -checkdups -all 2>&1 >/dev/null | grep '^duplicate UUID'
 ```
 
 `-stripdups` is the opposite: it works on the whole vault regardless of the
@@ -350,8 +392,8 @@ worth fixing. It rewrites front matter in place, so run it on a copy.
 
 ```sh
 cp -r testdata/vault /tmp/scratch
-markdown-indexer-cli -dir /tmp/scratch -stripdups -F     # prompts; y/yes proceeds
-markdown-indexer-cli -dir /tmp/scratch -checkdups -F -all # now clean
+markdown-tools-cli -dir /tmp/scratch -stripdups -F     # prompts; y/yes proceeds
+markdown-tools-cli -dir /tmp/scratch -checkdups -F -all # now clean
 ```
 
 ### Checking the vault
@@ -359,14 +401,14 @@ markdown-indexer-cli -dir /tmp/scratch -checkdups -F -all # now clean
 `-q` changes nothing here, because the report goes to stderr and is the output:
 
 ```sh
-markdown-indexer-cli -dir testdata/vault -vaultcheck
+markdown-tools-cli -dir testdata/vault -vaultcheck
 echo "exit=$?"        # 1, the vault has problems
 
 # In CI: fail the build on a broken vault.
-markdown-indexer-cli -dir testdata/vault -vaultcheck || exit 1
+markdown-tools-cli -dir testdata/vault -vaultcheck || exit 1
 
 # Only ask whether the vault is clean.
-markdown-indexer-cli -dir testdata/vault -vaultcheck 2>&1 | grep -q 'vault check: ok' && echo clean
+markdown-tools-cli -dir testdata/vault -vaultcheck 2>&1 | grep -q 'vault check: ok' && echo clean
 ```
 
 ### Writing somewhere other than stdout
@@ -375,7 +417,7 @@ markdown-indexer-cli -dir testdata/vault -vaultcheck 2>&1 | grep -q 'vault check
 large:
 
 ```sh
-markdown-indexer-cli -dir testdata/vault -F -q -all -out vault.json
+markdown-tools-cli -dir testdata/vault -F -q -all -out vault.json
 
 # Then query the file directly.
 jq -r '.[].name' vault.json | sort
@@ -386,8 +428,8 @@ jq -r '.[].name' vault.json | sort
 Vaults that key documents on something other than `uuid`:
 
 ```sh
-markdown-indexer-cli -dir . -F -q -all -idkey id
-markdown-indexer-cli -dir . -F -q -all -idkey id | jq -r 'to_entries[] | "\(.key)  \(.value.relativePath)"'
+markdown-tools-cli -dir . -F -q -all -idkey id
+markdown-tools-cli -dir . -F -q -all -idkey id | jq -r 'to_entries[] | "\(.key)  \(.value.relativePath)"'
 ```
 
 ### Memory footprint
@@ -395,30 +437,42 @@ markdown-indexer-cli -dir . -F -q -all -idkey id | jq -r 'to_entries[] | "\(.key
 Useful when a vault is large enough to wonder.
 
 ```sh
-markdown-indexer-cli -dir testdata/vault -F -all -memusage > /dev/null
+markdown-tools-cli -dir testdata/vault -F -all -memusage > /dev/null
 ```
 
-## The library dependency
+## Library dependencies
 
 ```go
-require github.com/dentropy/markdown-indexer/libs/markdown-index v0.0.1
+require (
+	github.com/dentropy/markdown-indexer/libs/markdown-indexer v0.0.0
+	github.com/dentropy/markdown-indexer/libs/markdown-tools v0.0.0
+)
 ```
 
-The package is named `markdownindexer`, so it is reached through that name:
+The read-only package is reached through `markdownindexer`:
 
 ```go
-import "github.com/dentropy/markdown-indexer/libs/markdown-index"
+import "github.com/dentropy/markdown-indexer/libs/markdown-indexer"
 
 idx, err := markdownindexer.Scan(dir, markdownindexer.Options{})
 ```
 
-The library has no dependency on a database or a file watcher, which is why this
-CLI's only other direct dependency is `google/uuid`.
+The write package is reached through `markdowntools`:
+
+```go
+import "github.com/dentropy/markdown-indexer/libs/markdown-tools"
+
+changed, err := markdowntools.SetShare(idx, dir, "uuid", false)
+```
+
+Both sibling modules are resolved with local `replace` directives during
+development. Those directives are ignored when a module is consumed as a
+dependency.
 
 ## Test
 
-This module has a dependency on its sibling, so build it in module mode from its
-own directory:
+This module depends on both sibling libraries, so build it in module mode from
+its own directory:
 
 ```sh
 go test ./...
@@ -429,7 +483,7 @@ Manual verification steps are in [MANUAL-TESTING.md](MANUAL-TESTING.md).
 ## Layout
 
 ```
-main.go              flags, orchestration, share filtering, -stripdups, JSON encoding
+main.go              flags, orchestration, prompts, share filtering, JSON encoding
 main_test.go         the tests
 examples/            four small files, including a deliberate duplicate UUID
 testdata/            a realistic vault, used by the tests and most examples

@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dentropy/markdown-indexer/libs/markdown-index"
+	"github.com/dentropy/markdown-indexer/libs/markdown-indexer"
 )
 
 // Example indexes a vault and walks its wikilink graph.

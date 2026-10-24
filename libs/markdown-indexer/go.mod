@@ -1,4 +1,4 @@
-module github.com/dentropy/markdown-indexer/libs/markdown-index
+module github.com/dentropy/markdown-indexer/libs/markdown-indexer
 
 go 1.27.0
 

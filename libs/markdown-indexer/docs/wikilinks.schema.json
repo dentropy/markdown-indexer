@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "markdown-index wikilink graph",
+  "title": "markdown-indexer wikilink graph",
   "description": "The graph of wikilinks, inline tags, and front matter edges: every edge keyed by its content address, the same address EdgeCID computes. Identical edges share a content address and dedupe to a single entry.",
   "type": "object",
   "additionalProperties": {
@@ -8,7 +8,7 @@
   },
   "$defs": {
     "wikilink": {
-      "title": "markdown-index wikilink",
+      "title": "markdown-indexer wikilink",
       "description": "One graph edge: a resolved wikilink, a body embed, an inline tag, or a front matter edge.",
       "type": "object",
       "required": [

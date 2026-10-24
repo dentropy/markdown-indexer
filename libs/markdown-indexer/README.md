@@ -1,4 +1,4 @@
-# markdown-index
+# markdown-indexer
 
 Indexes a tree of markdown files into an in-memory index of documents, the
 wikilink edges between them, body embed edges, an edge for each inline `#tag`,
@@ -15,14 +15,14 @@ and the wikilinks, markdown links, and `#tags` found in front matter.
 > The vault stays the source of truth: nothing here writes back.
 
 ```go
-import "github.com/dentropy/markdown-indexer/libs/markdown-index"
+import "github.com/dentropy/markdown-indexer/libs/markdown-indexer"
 ```
 
 A Go module with no dependency on a database, a file watcher, or anything else
 an indexing pass does not need.
 
 ```sh
-go get github.com/dentropy/markdown-indexer/libs/markdown-index
+go get github.com/dentropy/markdown-indexer/libs/markdown-indexer
 ```
 
 The package is named `markdownindexer`, so everything is reached through that
@@ -35,8 +35,9 @@ idx, err := markdownindexer.Scan("./notes", markdownindexer.Options{})
 Requires Go 1.27.
 
 This is one module of the [markdown-indexer](../../README.md) repo. Its sibling
-[markdown-indexer-cli](../markdown-indexer-cli) is a command line tool over
-this package.
+[markdown-tools-cli](../markdown-tools-cli) is a command line tool over this
+package, and [markdown-tools](../markdown-tools) holds every write operation that
+acts on an index.
 
 The vault is the source of truth; the index is derived. This package only ever
 reads it.

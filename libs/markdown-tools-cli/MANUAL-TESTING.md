@@ -4,12 +4,12 @@ The index is content addressed, so two runs over the same vault must produce
 byte-identical output. This is the property most worth checking by hand.
 
 ``` bash
-./markdown-indexer-cli -dir testdata -force -all > /tmp/run1.json
-./markdown-indexer-cli -dir testdata -force -all > /tmp/run2.json
+./markdown-tools-cli -dir testdata -force -all > /tmp/run1.json
+./markdown-tools-cli -dir testdata -force -all > /tmp/run2.json
 diff /tmp/run1.json /tmp/run2.json && echo "documents: stable"
 
-./markdown-indexer-cli -dir testdata -force -wikilinks -all > /tmp/wl1.json
-./markdown-indexer-cli -dir testdata -force -wikilinks -all > /tmp/wl2.json
+./markdown-tools-cli -dir testdata -force -wikilinks -all > /tmp/wl1.json
+./markdown-tools-cli -dir testdata -force -wikilinks -all > /tmp/wl2.json
 diff /tmp/wl1.json /tmp/wl2.json && echo "wikilinks: stable"
 ```
 
@@ -21,10 +21,10 @@ deliberately broken file, and without `-force` it aborts the run.
 
 ``` bash
 # The shared half only.
-./markdown-indexer-cli -dir testdata -force | jq -r 'keys[]'
+./markdown-tools-cli -dir testdata -force | jq -r 'keys[]'
 
 # The whole vault.
-./markdown-indexer-cli -dir testdata -force -all | jq -r 'keys[]'
+./markdown-tools-cli -dir testdata -force -all | jq -r 'keys[]'
 ```
 
 `testdata/no-frontmatter.md` has no front matter at all, so it appears only under
@@ -33,7 +33,7 @@ deliberately broken file, and without `-force` it aborts the run.
 #### Wikilink graph
 
 ``` bash
-./markdown-indexer-cli -dir testdata -force -wikilinks -all | jq -r 'to_entries[] | "\(.value.label)\t\(.value.title)\t\(.value.to_document_id)"'
+./markdown-tools-cli -dir testdata -force -wikilinks -all | jq -r 'to_entries[] | "\(.value.label)\t\(.value.title)\t\(.value.to_document_id)"'
 ```
 
 Edges are keyed by content address, so identical `[[links]]` collapse to one
@@ -45,7 +45,7 @@ Reports structural problems and exits non-zero, which is what makes it usable as
 a CI gate.
 
 ``` bash
-./markdown-indexer-cli -dir testdata/vault -vaultcheck
+./markdown-tools-cli -dir testdata/vault -vaultcheck
 echo "exit=$?"
 ```
 
@@ -59,7 +59,7 @@ Both need `-force` on this fixture, for the same reason as above.
 
 ``` bash
 # Report duplicates, still writing the index.
-./markdown-indexer-cli -dir testdata/vault -checkdups -force -all
+./markdown-tools-cli -dir testdata/vault -checkdups -force -all
 echo "exit=$?"
 
 # Assign a fresh UUID to every document sharing one. Answers anything but
@@ -70,12 +70,40 @@ echo "exit=$?"
 
 ``` bash
 cp -r testdata/vault /tmp/strip-scratch
-echo y | ./markdown-indexer-cli -dir /tmp/strip-scratch -stripdups -force
-./markdown-indexer-cli -dir /tmp/strip-scratch -vaultcheck
+echo y | ./markdown-tools-cli -dir /tmp/strip-scratch -stripdups -force
+./markdown-tools-cli -dir /tmp/strip-scratch -vaultcheck
 ```
 
 The duplicate is gone, but the command still exits 1: `broken-frontmatter.md` is
 still broken. Check that the duplicate line specifically has disappeared.
+
+#### Writing front matter
+
+Both write modes modify files in place, so use a scratch copy. `-initfrontmatter`
+fills gaps without touching existing values; `-setshare` forces the permission
+and still adds missing UUIDs.
+
+``` bash
+cp -r testdata/vault /tmp/frontmatter-scratch
+
+# Add missing uuid/share; only files with front matter can be read without -force.
+./markdown-tools-cli -dir /tmp/frontmatter-scratch -initfrontmatter -force -q > /dev/null
+
+# Force every matched document private, recursively.
+./markdown-tools-cli -dir /tmp/frontmatter-scratch -setshare -share=false -force -q > /dev/null
+
+# Every document is private now, so the default share filter loads nothing.
+./markdown-tools-cli -dir /tmp/frontmatter-scratch -force | jq 'length'
+```
+
+Repeat `-setshare` and confirm the files are byte-identical (the command skips
+unchanged files):
+
+``` bash
+cp -r /tmp/frontmatter-scratch /tmp/frontmatter-before
+./markdown-tools-cli -dir /tmp/frontmatter-scratch -setshare -share=false -force -q > /dev/null
+diff -r /tmp/frontmatter-before /tmp/frontmatter-scratch && echo "front matter: stable"
+```
 
 #### Broken front matter
 
@@ -84,10 +112,10 @@ line per file.
 
 ``` bash
 # Aborts.
-./markdown-indexer-cli -dir testdata/vault; echo "exit=$?"
+./markdown-tools-cli -dir testdata/vault; echo "exit=$?"
 
 # Skips and carries on.
-./markdown-indexer-cli -dir testdata/vault -force -all | jq -r 'keys[]'
+./markdown-tools-cli -dir testdata/vault -force -all | jq -r 'keys[]'
 ```
 
 #### Quiet output
@@ -97,30 +125,30 @@ extra flags. `-quiet` (`-q`) silences the notices.
 
 ``` bash
 # The notice is on stderr, so this already works.
-./markdown-indexer-cli -dir testdata -force -all | jq -r 'keys | length'
+./markdown-tools-cli -dir testdata -force -all | jq -r 'keys | length'
 
 # Same result, no notice.
-./markdown-indexer-cli -dir testdata -force -all -q | jq -r 'keys | length'
+./markdown-tools-cli -dir testdata -force -all -q | jq -r 'keys | length'
 
 # Nothing at all on stderr under -q.
-./markdown-indexer-cli -dir testdata -force -all -q 2>&1 >/dev/null | wc -c
+./markdown-tools-cli -dir testdata -force -all -q 2>&1 >/dev/null | wc -c
 ```
 
 Check the three cases that `-q` must not break. A fatal error still fails, with
 the file named:
 
 ``` bash
-./markdown-indexer-cli -dir testdata/vault -q; echo "exit=$?"
+./markdown-tools-cli -dir testdata/vault -q; echo "exit=$?"
 ```
 
 `-vaultcheck` still reports, because its report is the output:
 
 ``` bash
-./markdown-indexer-cli -dir testdata/vault -vaultcheck -q; echo "exit=$?"
+./markdown-tools-cli -dir testdata/vault -vaultcheck -q; echo "exit=$?"
 ```
 
 #### Memory estimate
 
 ``` bash
-./markdown-indexer-cli -dir testdata -all -memusage > /dev/null
+./markdown-tools-cli -dir testdata -all -memusage > /dev/null
 ```

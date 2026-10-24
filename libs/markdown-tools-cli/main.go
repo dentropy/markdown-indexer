@@ -2,37 +2,51 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
-	"github.com/dentropy/markdown-indexer/libs/markdown-index"
-	"github.com/google/uuid"
+	"github.com/dentropy/markdown-indexer/libs/markdown-indexer"
+	"github.com/dentropy/markdown-indexer/libs/markdown-tools"
 )
 
-const frontMatterDelimiter = "---"
-
 type options struct {
-	dir        string
-	out        string
-	pattern    string
-	all        bool
-	idKey      string
-	checkDup   bool
-	stripDup   bool
-	memUsage   bool
-	wikilinks  bool
-	force      bool
-	vaultCheck bool
-	quiet      bool
+	dir             string
+	out             string
+	pattern         string
+	all             bool
+	idKey           string
+	checkDup        bool
+	stripDup        bool
+	initFrontMatter bool
+	setShare        bool
+	share           string
+	memUsage        bool
+	wikilinks       bool
+	force           bool
+	vaultCheck      bool
+	quiet           bool
+}
+
+// shareValue parses -share into a boolean. The second return value reports
+// whether the flag was set at all, so -initfrontmatter can tell "leave the
+// default false" apart from an explicit request.
+func (o options) shareValue() (bool, bool, error) {
+	if o.share == "" {
+		return false, false, nil
+	}
+	v, err := strconv.ParseBool(o.share)
+	if err != nil {
+		return false, false, fmt.Errorf("parse -share: %w", err)
+	}
+	return v, true, nil
 }
 
 // filterSharedDocs narrows the document set to the ones the CLI is allowed to
@@ -85,20 +99,28 @@ func runWith(args []string, stdout, stderr io.Writer, stdin io.Reader) error {
 	if err != nil {
 		return err
 	}
-	docs := ix.Documents
 
 	// Duplicate-UUID repair runs on the whole vault: a collision between two
 	// unshared documents is still a collision worth fixing.
 	if opts.stripDup {
-		if err := stripDuplicateFrontMatter(docs, opts.dir, opts.idKey, stdin, stderr); err != nil {
+		if err := stripDuplicateFrontMatter(ix, opts.dir, opts.idKey, stdin, stderr); err != nil {
 			return err
 		}
-		ix, err = scanVault(opts, notices)
+		if ix, err = scanVault(opts, notices); err != nil {
+			return err
+		}
+	} else if opts.initFrontMatter || opts.setShare {
+		changed, err := rewriteFrontMatter(ix, opts, notices)
 		if err != nil {
 			return err
 		}
-		docs = ix.Documents
+		if len(changed) > 0 {
+			if ix, err = scanVault(opts, notices); err != nil {
+				return err
+			}
+		}
 	}
+	docs := ix.Documents
 
 	// By default only documents whose front matter sets share: true are loaded
 	// in; -all widens the index to the whole vault.
@@ -173,6 +195,34 @@ func scanVault(opts options, stderr io.Writer) (*markdownindexer.Index, error) {
 	return ix, nil
 }
 
+// rewriteFrontMatter applies -initfrontmatter or -setshare through
+// markdowntools, reporting each rewritten file and the total.
+func rewriteFrontMatter(ix *markdownindexer.Index, opts options, notices io.Writer) ([]string, error) {
+	share, shareSet, err := opts.shareValue()
+	if err != nil {
+		return nil, err
+	}
+
+	var changed []string
+	if opts.setShare {
+		changed, err = markdowntools.SetShare(ix, opts.dir, opts.idKey, share)
+	} else {
+		var override *bool
+		if shareSet {
+			override = &share
+		}
+		changed, err = markdowntools.InitFrontMatter(ix, opts.dir, opts.idKey, override)
+	}
+	if err != nil {
+		return changed, err
+	}
+	for _, p := range changed {
+		fmt.Fprintf(notices, "updated front matter: %s\n", p)
+	}
+	fmt.Fprintf(notices, "%d file(s) updated\n", len(changed))
+	return changed, nil
+}
+
 // filterMarshalable keeps every element of items that serializes to JSON
 // without error, logging the ones that do not to stderr. With -force a single
 // bad element (e.g. corrupt front matter that already slipped into metadata)
@@ -198,7 +248,7 @@ func documentsIndex(docs []markdownindexer.Document) map[string]markdownindexer.
 }
 
 func parseFlags(args []string) (options, error) {
-	fs := flag.NewFlagSet("markdown-indexer-cli", flag.ContinueOnError)
+	fs := flag.NewFlagSet("markdown-tools-cli", flag.ContinueOnError)
 	var opts options
 	fs.StringVar(&opts.dir, "dir", ".", "directory to scan for markdown files")
 	fs.StringVar(&opts.out, "out", "", "output file (defaults to stdout)")
@@ -207,6 +257,9 @@ func parseFlags(args []string) (options, error) {
 	fs.StringVar(&opts.idKey, "idkey", "uuid", "YAML front matter key holding the document UUID")
 	fs.BoolVar(&opts.checkDup, "checkdups", false, "report documents that share the same UUID")
 	fs.BoolVar(&opts.stripDup, "stripdups", false, "replace the UUID of every document with a duplicate UUID with a fresh one, keeping the rest of its front matter (prompts for confirmation)")
+	fs.BoolVar(&opts.initFrontMatter, "initfrontmatter", false, "add missing uuid and share front matter to every matched document (share defaults to false)")
+	fs.BoolVar(&opts.setShare, "setshare", false, "set share on every matched document and add a uuid where one is missing; requires -share")
+	fs.StringVar(&opts.share, "share", "", "share value for -initfrontmatter and -setshare (true or false)")
 	fs.BoolVar(&opts.memUsage, "memusage", false, "print an estimate of the memory used by the documents struct")
 	fs.BoolVar(&opts.wikilinks, "wikilinks", false, "output a JSON graph of wikilinks instead of the document index")
 	fs.BoolVar(&opts.force, "force", false, "skip documents with broken front matter and index the rest instead of aborting")
@@ -225,6 +278,24 @@ func parseFlags(args []string) (options, error) {
 	}
 	if opts.pattern == "" {
 		return options{}, errors.New("pattern must not be empty")
+	}
+	writeModes := 0
+	for _, on := range []bool{opts.stripDup, opts.initFrontMatter, opts.setShare} {
+		if on {
+			writeModes++
+		}
+	}
+	if writeModes > 1 {
+		return options{}, errors.New("-stripdups, -initfrontmatter, and -setshare are mutually exclusive")
+	}
+	if opts.setShare && opts.share == "" {
+		return options{}, errors.New("-setshare requires -share=true or -share=false")
+	}
+	if opts.share != "" && !opts.initFrontMatter && !opts.setShare {
+		return options{}, errors.New("-share only applies with -initfrontmatter or -setshare")
+	}
+	if _, _, err := opts.shareValue(); err != nil {
+		return options{}, err
 	}
 	return opts, nil
 }
@@ -364,14 +435,13 @@ func documentsWithDuplicateID(dups []string, docs []markdownindexer.Document) []
 // asks for confirmation, and then replaces the UUID of each of them with a
 // fresh one so the conflict is resolved while the rest of every document's
 // front matter is left intact.
-func stripDuplicateFrontMatter(docs []markdownindexer.Document, dir, idKey string, stdin io.Reader, stderr io.Writer) error {
-	ix := &markdownindexer.Index{Documents: docs}
+func stripDuplicateFrontMatter(ix *markdownindexer.Index, dir, idKey string, stdin io.Reader, stderr io.Writer) error {
 	dups := ix.DuplicateUUIDs()
 	if len(dups) == 0 {
 		fmt.Fprintln(stderr, "no duplicate UUIDs found; nothing to fix")
 		return nil
 	}
-	colliding := documentsWithDuplicateID(dups, docs)
+	colliding := documentsWithDuplicateID(dups, ix.Documents)
 
 	fmt.Fprintf(stderr, "The following %d document(s) have a duplicate UUID. Each one will get a fresh UUID:\n", len(colliding))
 	for _, c := range colliding {
@@ -384,12 +454,13 @@ func stripDuplicateFrontMatter(docs []markdownindexer.Document, dir, idKey strin
 	if !ok {
 		return errors.New("aborted by user; no files were modified")
 	}
-	for _, c := range colliding {
-		abs := filepath.Join(dir, filepath.FromSlash(c.Path))
-		if err := replaceFrontMatterUUID(abs, idKey); err != nil {
-			return fmt.Errorf("fix uuid in %s: %w", c.Path, err)
-		}
-		fmt.Fprintf(stderr, "reassigned uuid: %s\n", c.Path)
+
+	changed, err := markdowntools.ReplaceDuplicateUUIDs(ix, dir, idKey)
+	if err != nil {
+		return err
+	}
+	for _, p := range changed {
+		fmt.Fprintf(stderr, "reassigned uuid: %s\n", p)
 	}
 	return nil
 }
@@ -407,151 +478,6 @@ func promptConfirm(stderr io.Writer, stdin io.Reader) (bool, error) {
 		return true, nil
 	}
 	return false, nil
-}
-
-// replaceFrontMatterUUID assigns a fresh UUID to the given key in a file's
-// front matter on disk, leaving the rest of the file byte for byte untouched.
-func replaceFrontMatterUUID(abs, idKey string) error {
-	data, err := os.ReadFile(abs)
-	if err != nil {
-		return err
-	}
-	cleaned := setFrontMatterUUID(data, idKey, uuid.New().String())
-	if bytes.Equal(cleaned, data) {
-		return nil
-	}
-	return os.WriteFile(abs, cleaned, 0o644)
-}
-
-// setFrontMatterUUID returns the file content with the value of the top-level
-// YAML key `key` replaced by `value`, preserving all other bytes of the file.
-// If the front matter has no such key, the key is appended to it. Files
-// without front matter are returned unchanged.
-func setFrontMatterUUID(data []byte, key, value string) []byte {
-	if !hasFrontMatter(data) {
-		return data
-	}
-
-	body := data[len(frontMatterDelimiter):]
-	yamlStart := len(frontMatterDelimiter)
-	trimmed := bytes.TrimLeft(body, " \t")
-	yamlStart += len(body) - len(trimmed)
-	if len(trimmed) > 0 && (trimmed[0] == '\n' || trimmed[0] == '\r') {
-		n := 1
-		if trimmed[0] == '\r' && len(trimmed) > 1 && trimmed[1] == '\n' {
-			n = 2
-		}
-		yamlStart += n
-		trimmed = trimmed[n:]
-	}
-
-	end := findClosingDelimiter(trimmed)
-	if end < 0 {
-		return data
-	}
-	yamlEnd := yamlStart + end
-
-	// The YAML block ends with the closing --- delimiter, so every line before
-	// the last one is front-matter content.
-	lines := bytes.Split(data[yamlStart:yamlEnd], []byte("\n"))
-	if len(lines) == 0 {
-		return data
-	}
-	content, closing := lines[:len(lines)-1], lines[len(lines)-1]
-
-	keyBytes := []byte(key)
-	replaced := false
-	var block bytes.Buffer
-	for _, line := range content {
-		if !replaced {
-			if valStart, ok := matchingKeyValueStart(line, keyBytes); ok {
-				block.Write(line[:valStart])
-				block.WriteString(value)
-				block.WriteByte('\n')
-				replaced = true
-				continue
-			}
-		}
-		block.Write(line)
-		block.WriteByte('\n')
-	}
-	if !replaced {
-		block.WriteString(key)
-		block.WriteString(": ")
-		block.WriteString(value)
-		block.WriteByte('\n')
-	}
-	block.Write(closing)
-
-	var out bytes.Buffer
-	out.Write(data[:yamlStart])
-	out.Write(block.Bytes())
-	out.Write(data[yamlEnd:])
-	return out.Bytes()
-}
-
-// hasFrontMatter reports whether the file content opens with a --- delimiter
-// line.
-func hasFrontMatter(data []byte) bool {
-	if !bytes.HasPrefix(data, []byte(frontMatterDelimiter)) {
-		return false
-	}
-	rest := data[len(frontMatterDelimiter):]
-	if len(rest) == 0 {
-		return false
-	}
-	c := rest[0]
-	return c == '\n' || c == '\r' || c == ' ' || c == '\t'
-}
-
-// findClosingDelimiter returns the offset just past the closing --- line within
-// body, or -1 when the block is never closed.
-func findClosingDelimiter(body []byte) int {
-	for _, line := range bytes.Split(body, []byte("\n")) {
-		trimmed := bytes.TrimRight(line, " \t\r")
-		if bytes.Equal(trimmed, []byte(frontMatterDelimiter)) {
-			return bytes.Index(body, line) + len(line)
-		}
-	}
-	return -1
-}
-
-// matchingKeyValueStart reports whether line is a top-level "<key>: value"
-// front-matter entry (wrapping quotes around the key are tolerated) and
-// returns the byte offset at which the value begins.
-func matchingKeyValueStart(line, key []byte) (int, bool) {
-	if len(line) == 0 || line[0] == ' ' || line[0] == '\t' || line[0] == '\r' || line[0] == '#' {
-		return 0, false
-	}
-	rest := line
-	quoted := false
-	if rest[0] == '\'' || rest[0] == '"' {
-		quoted = true
-		rest = rest[1:]
-	}
-	if !bytes.HasPrefix(rest, key) {
-		return 0, false
-	}
-	rest = rest[len(key):]
-	if quoted {
-		if len(rest) == 0 || (rest[0] != '\'' && rest[0] != '"') {
-			return 0, false
-		}
-		rest = rest[1:]
-	}
-	i := 0
-	for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t') {
-		i++
-	}
-	if i >= len(rest) || rest[i] != ':' {
-		return 0, false
-	}
-	rest = rest[i+1:]
-	i = 0
-	for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t') {
-		i++
-	}
-	return len(line) - len(rest) + i, true
 }
 
 // buildWikilinkGraph scans every document for [[wikilinks]] and returns the
