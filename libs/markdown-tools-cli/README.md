@@ -28,26 +28,26 @@ Requires Go 1.27.
 ```
 
 The default operation writes the document index as JSON. `-wikilinks` writes the
-wikilink graph instead, and `-vaultcheck` reports structural problems and exits
+wikilink graph instead, and `-validate` reports structural problems and exits
 non-zero. Every operation is a one-shot scan; there is no daemon and no database.
 
 ```sh
-./markdown-tools-cli -dir examples -all              # document JSON list
+./markdown-tools-cli -dir examples -include-unshared              # document JSON list
 ./markdown-tools-cli -dir examples -wikilinks        # wikilink graph JSON
-./markdown-tools-cli -dir testdata/vault -vaultcheck # structural problems
+./markdown-tools-cli -dir testdata/vault -validate # structural problems
 ```
 
 | Flag         | Default    | Description                                                    |
 | ------------ | ---------- | -------------------------------------------------------------- |
 | `-dir`       | `.`        | Directory to scan for markdown files                           |
-| `-pattern`   | `**/*.md`  | Glob pattern, relative to `-dir` (supports `**` recursion)     |
+| `-glob`   | `**/*.md`  | Glob pattern, relative to `-dir` (supports `**` recursion)     |
 | `-out`       | *(stdout)* | Output file for the JSON object                                |
 | `-idkey`     | `uuid`     | YAML front matter key holding the document UUID                |
-| `-all`       | `false`    | Load every document; by default only `share: true` documents   |
+| `-include-unshared`       | `false`    | Load every document; by default only `share: true` documents   |
 | `-wikilinks` | `false`    | Output the wikilink graph instead of the document index        |
-| `-vaultcheck`| `false`    | Report broken front matter and duplicate/missing UUIDs          |
-| `-checkdups` | `false`    | Report documents sharing a UUID, after writing the index       |
-| `-stripdups` | `false`    | Assign a fresh UUID to every document sharing one (prompts)    |
+| `-validate`| `false`    | Report broken front matter and duplicate/missing UUIDs          |
+| `-check-duplicates` | `false`    | Report documents sharing a UUID, after writing the index       |
+| `-fix-duplicates` | `false`    | Assign a fresh UUID to every document sharing one (prompts)    |
 | `-initfrontmatter` | `false` | Add missing `uuid` and `share` keys; `share` defaults to `false` |
 | `-setshare`  | `false`    | Set `share` on every matched document and add missing UUIDs; requires `-share` |
 | `-share`     | *(unset)*  | `true` or `false`, used by `-initfrontmatter` and `-setshare`  |
@@ -58,11 +58,11 @@ non-zero. Every operation is a one-shot scan; there is no daemon and no database
 ## Share filtering
 
 By default the CLI loads only documents whose front matter sets `share: true`.
-Pass `-all` to load the whole vault.
+Pass `-include-unshared` to load the whole vault.
 
 ```sh
 ./markdown-tools-cli -dir .        # only the shared half
-./markdown-tools-cli -dir . -all   # every document
+./markdown-tools-cli -dir . -include-unshared   # every document
 ```
 
 `share` accepts a JSON boolean, a quoted string, or anything
@@ -72,15 +72,15 @@ Pass `-all` to load the whole vault.
 This differs from the library, where `markdownindexer.Options{}.Shared` is **off** by
 default. The CLI opts into the shared filter; the library does not.
 
-The structural commands mostly ignore the lens: `-vaultcheck` and `-stripdups`
+The structural commands mostly ignore the lens: `-validate` and `-fix-duplicates`
 operate on the whole vault, so CI still sees problems in documents that are not
-shared. `-checkdups` is the exception: it reports on what was indexed, so it
-needs `-all` to see unshared documents.
+shared. `-check-duplicates` is the exception: it reports on what was indexed, so it
+needs `-include-unshared` to see unshared documents.
 
 ## Writing front matter
 
 Two flags add or change front matter in place. Both walk every markdown file the
-scan matches (`-pattern`, recursively by default) under `-dir`.
+scan matches (`-glob`, recursively by default) under `-dir`.
 
 `-initfrontmatter` adds what is missing and leaves existing values alone:
 
@@ -106,7 +106,7 @@ UUIDs and the rest of each file's front matter are preserved:
 `-share` takes `true` or `false` (anything `strconv.ParseBool` accepts). It is
 required with `-setshare`; with `-initfrontmatter` it only decides which value
 missing share keys get. The write modes are mutually exclusive with each other
-and with `-stripdups`.
+and with `-fix-duplicates`.
 
 Writes are immediate and unconfirmed: run bulk changes on a copy or from version
 control. Files whose bytes would not change are not rewritten, so repeating a
@@ -144,7 +144,7 @@ The index as a JSON object keyed by each document's UUID:
 
 A document's identity is its UUID, not its path, so a renamed file keeps the
 same key. Two documents sharing a UUID collapse into one entry (the later in
-path order wins), which is what `-checkdups` exists to catch. Files with no front
+path order wins), which is what `-check-duplicates` exists to catch. Files with no front
 matter are still indexed: `metadata` is `{}` and they land under the `""` key.
 
 Output is deterministic. Front matter and edges are content addressed with
@@ -187,11 +187,11 @@ aliases (`[[target|alias]]`) are both understood.
 
 ## Checking the vault
 
-`-vaultcheck` reports structural problems on stderr and exits non-zero, so it can
+`-validate` reports structural problems on stderr and exits non-zero, so it can
 gate CI:
 
 ```sh
-$ ./markdown-tools-cli -dir testdata/vault -vaultcheck
+$ ./markdown-tools-cli -dir testdata/vault -validate
 
 broken-frontmatter.md: broken front matter: parse front matter: yaml: line 1: did not find expected ',' or ']'
 duplicate UUID 77679f2b-... -> duplicate-a.md, duplicate-b.md
@@ -202,7 +202,7 @@ It reports front matter that fails to parse, UUIDs shared across documents, and
 front matter missing the `-idkey`. Files with no front matter at all are
 tolerated. When nothing is wrong it prints `vault check: ok` and exits zero.
 
-`-checkdups` reports duplicate UUIDs while still writing the index. `-stripdups`
+`-check-duplicates` reports duplicate UUIDs while still writing the index. `-fix-duplicates`
 goes further: it lists the colliding documents, asks for confirmation, and assigns
 each one a fresh UUID, leaving the rest of every file's front matter untouched.
 Anything but `y`/`yes` aborts without modifying a file.
@@ -218,7 +218,7 @@ $ ./markdown-tools-cli -dir testdata/vault
 
 error: vault/broken-frontmatter.md: parse front matter: yaml: line 1: did not find expected ',' or ']'
 
-$ ./markdown-tools-cli -dir testdata/vault -force -all
+$ ./markdown-tools-cli -dir testdata/vault -force -include-unshared
 
 skipping vault/broken-frontmatter.md: parse front matter: yaml: line 1: did not find expected ',' or ']'
 ```
@@ -233,12 +233,12 @@ and pipes into `jq` on its own. `-quiet` (or `-q`) drops those notices when you
 would rather not see them:
 
 ```sh
-$ markdown-tools-cli -dir . -all -force | jq '.[] | .name'
-$ markdown-tools-cli -dir . -all -force -q | jq '.[] | .name'
+$ markdown-tools-cli -dir . -include-unshared -force | jq '.[] | .name'
+$ markdown-tools-cli -dir . -include-unshared -force -q | jq '.[] | .name'
 ```
 
 `-quiet` suppresses progress notices only. A run that fails still says so on
-stderr and still exits non-zero, and `-vaultcheck` still reports normally,
+stderr and still exits non-zero, and `-validate` still reports normally,
 because there the report *is* the output.
 
 ## Examples
@@ -265,13 +265,13 @@ go build -o markdown-tools-cli .
 
 ```sh
 # Every document, as JSON on stdout.
-markdown-tools-cli -dir testdata/vault -F -all > vault.json
+markdown-tools-cli -dir testdata/vault -F -include-unshared > vault.json
 
 # Just the shared documents (the default).
 markdown-tools-cli -dir testdata/vault -F > shared.json
 
 # One file per pattern, relative to -dir.
-markdown-tools-cli -dir testdata/vault -pattern 'People/*.md' -F -all
+markdown-tools-cli -dir testdata/vault -glob 'People/*.md' -F -include-unshared
 ```
 
 ### Jumping straight to jq
@@ -281,13 +281,13 @@ Together they give you clean JSON to work with:
 
 ```sh
 # How many documents indexed.
-markdown-tools-cli -dir testdata/vault -F -q -all | jq 'length'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq 'length'
 
 # Every path.
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[].relativePath'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r '.[].relativePath'
 
 # Name, title, and tags as a table.
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[] | [.name, .metadata.title, (.metadata.tags|tostring)] | @tsv'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r '.[] | [.name, .metadata.title, (.metadata.tags|tostring)] | @tsv'
 ```
 
 ### `-F` on its own versus `-F -q`
@@ -296,17 +296,17 @@ The only difference is stderr. Both give identical stdout:
 
 ```sh
 # You see: skipping vault/broken-frontmatter.md: parse front matter: ...
-markdown-tools-cli -dir testdata/vault -F -all | jq 'length'
+markdown-tools-cli -dir testdata/vault -F -include-unshared | jq 'length'
 
 # You see nothing; stdout is the same 24 documents.
-markdown-tools-cli -dir testdata/vault -F -q -all | jq 'length'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq 'length'
 ```
 
 `-F` alone is right when you want to know a file was skipped. `-F -q` is right
 when you are piping. To keep the notice but still capture it:
 
 ```sh
-markdown-tools-cli -dir testdata/vault -F -all 2>skipped.txt | jq 'length'
+markdown-tools-cli -dir testdata/vault -F -include-unshared 2>skipped.txt | jq 'length'
 ```
 
 ### Querying front matter
@@ -317,26 +317,26 @@ disagree about shapes, defensive `jq` tends to pay off:
 ```sh
 # Titles, sorted. The select drops files with no front matter at all, whose
 # title comes through as null.
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.title) | .metadata.title] | sort | .[]'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r '[.[] | select(.metadata.title) | .metadata.title] | sort | .[]'
 
 # One document by title.
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r 'to_entries[] | select(.value.metadata.title == "Ada Lovelace") | .key'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r 'to_entries[] | select(.value.metadata.title == "Ada Lovelace") | .key'
 
 # Slug built from the title.
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.title) | .metadata.title | ascii_downcase | gsub(" "; "-")'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r '.[] | select(.metadata.title) | .metadata.title | ascii_downcase | gsub(" "; "-")'
 
 # Drafts, and anything unpublished.
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.draft == true) | .relativePath'
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[] | select(.metadata.published == false) | .relativePath'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r '.[] | select(.metadata.draft == true) | .relativePath'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r '.[] | select(.metadata.published == false) | .relativePath'
 
 # Tags written as a YAML list and as a comma-separated string, folded together.
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.tags) | .metadata.tags | if type == "array" then .[] else (gsub(", *";"\n") | split("\n")) end] | flatten | map(select(length > 0)) | unique | sort | .[]'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r '[.[] | select(.metadata.tags) | .metadata.tags | if type == "array" then .[] else (gsub(", *";"\n") | split("\n")) end] | flatten | map(select(length > 0)) | unique | sort | .[]'
 ```
 
 `author` has the same problem: some files write a string, some a mapping.
 
 ```sh
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '[.[] | select(.metadata.author) | .metadata.author | if type == "object" then .name else . end] | unique | sort | .[]'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r '[.[] | select(.metadata.author) | .metadata.author | if type == "object" then .name else . end] | unique | sort | .[]'
 ```
 
 ### Finding what changed
@@ -346,54 +346,54 @@ matter does. That makes the index a cheap "what did I touch" check:
 
 ```sh
 # Front matter CID per document, truncated for reading.
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r '.[] | [.relativePath, .frontmatter_cid[0:12]] | @tsv'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r '.[] | [.relativePath, .frontmatter_cid[0:12]] | @tsv'
 
 # Documents edited since a given unix timestamp.
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r --argjson cutoff 1789000000 '.[] | select(.modifiedUnix > $cutoff) | .relativePath'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r --argjson cutoff 1789000000 '.[] | select(.modifiedUnix > $cutoff) | .relativePath'
 ```
 
 ### Walking the wikilink graph
 
 ```sh
 # Every edge as a readable line.
-markdown-tools-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | "\(.from_document_id[0:8]) -> \(.to_document_id[0:8])  \(.title)"'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared -wikilinks | jq -r '.[] | "\(.from_document_id[0:8]) -> \(.to_document_id[0:8])  \(.title)"'
 
 # Internal edges only; drop the URL ones.
-markdown-tools-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | select(.label == "INTERNAL") | .title'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared -wikilinks | jq -r '.[] | select(.label == "INTERNAL") | .title'
 
 # Aliases that resolve: the title is the pipe alias, not the target.
-markdown-tools-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '.[] | select(.title | test("index"; "i")) | .title'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared -wikilinks | jq -r '.[] | select(.title | test("index"; "i")) | .title'
 
 # The most-linked-to documents, as a backlink count.
-markdown-tools-cli -dir testdata/vault -F -q -all -wikilinks | jq -r '[.[] | select(.label == "INTERNAL") | .to_document_id] | group_by(.) | map({id: .[0], n: length}) | sort_by(-.n) | .[0:5][] | "\(.n)\t\(.id)"'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared -wikilinks | jq -r '[.[] | select(.label == "INTERNAL") | .to_document_id] | group_by(.) | map({id: .[0], n: length}) | sort_by(-.n) | .[0:5][] | "\(.n)\t\(.id)"'
 
 # Documents nothing links to.
-markdown-tools-cli -dir testdata/vault -F -q -all -wikilinks > edges.json
-markdown-tools-cli -dir testdata/vault -F -q -all | jq -r --slurpfile g edges.json '.[] | .key as $me | select([$g[0][] | select(.from_document_id == $me)] | length == 0) | .value.relativePath'
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared -wikilinks > edges.json
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r --slurpfile g edges.json '.[] | .key as $me | select([$g[0][] | select(.from_document_id == $me)] | length == 0) | .value.relativePath'
 ```
 
 ### Finding duplicates
 
-`-checkdups` reports them after writing the index, and exits non-zero, so it
-works in CI. Pass `-all`: it runs *after* the share filter, so without it the
+`-check-duplicates` reports them after writing the index, and exits non-zero, so it
+works in CI. Pass `-include-unshared`: it runs *after* the share filter, so without it the
 collisions are filtered out before it ever sees them.
 
 ```sh
 # Reports the deliberate duplicate-a/duplicate-b pair. Exits 1.
-markdown-tools-cli -dir testdata/vault -F -checkdups -all > /dev/null
+markdown-tools-cli -dir testdata/vault -F -check-duplicates -include-unshared > /dev/null
 
 # Which UUIDs collide.
-markdown-tools-cli -dir testdata/vault -F -checkdups -all 2>&1 >/dev/null | grep '^duplicate UUID'
+markdown-tools-cli -dir testdata/vault -F -check-duplicates -include-unshared 2>&1 >/dev/null | grep '^duplicate UUID'
 ```
 
-`-stripdups` is the opposite: it works on the whole vault regardless of the
+`-fix-duplicates` is the opposite: it works on the whole vault regardless of the
 filter, because a collision between two unshared documents is still a collision
 worth fixing. It rewrites front matter in place, so run it on a copy.
 
 ```sh
 cp -r testdata/vault /tmp/scratch
-markdown-tools-cli -dir /tmp/scratch -stripdups -F     # prompts; y/yes proceeds
-markdown-tools-cli -dir /tmp/scratch -checkdups -F -all # now clean
+markdown-tools-cli -dir /tmp/scratch -fix-duplicates -F     # prompts; y/yes proceeds
+markdown-tools-cli -dir /tmp/scratch -check-duplicates -F -include-unshared # now clean
 ```
 
 ### Checking the vault
@@ -401,14 +401,14 @@ markdown-tools-cli -dir /tmp/scratch -checkdups -F -all # now clean
 `-q` changes nothing here, because the report goes to stderr and is the output:
 
 ```sh
-markdown-tools-cli -dir testdata/vault -vaultcheck
+markdown-tools-cli -dir testdata/vault -validate
 echo "exit=$?"        # 1, the vault has problems
 
 # In CI: fail the build on a broken vault.
-markdown-tools-cli -dir testdata/vault -vaultcheck || exit 1
+markdown-tools-cli -dir testdata/vault -validate || exit 1
 
 # Only ask whether the vault is clean.
-markdown-tools-cli -dir testdata/vault -vaultcheck 2>&1 | grep -q 'vault check: ok' && echo clean
+markdown-tools-cli -dir testdata/vault -validate 2>&1 | grep -q 'vault check: ok' && echo clean
 ```
 
 ### Writing somewhere other than stdout
@@ -417,7 +417,7 @@ markdown-tools-cli -dir testdata/vault -vaultcheck 2>&1 | grep -q 'vault check: 
 large:
 
 ```sh
-markdown-tools-cli -dir testdata/vault -F -q -all -out vault.json
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared -out vault.json
 
 # Then query the file directly.
 jq -r '.[].name' vault.json | sort
@@ -428,8 +428,8 @@ jq -r '.[].name' vault.json | sort
 Vaults that key documents on something other than `uuid`:
 
 ```sh
-markdown-tools-cli -dir . -F -q -all -idkey id
-markdown-tools-cli -dir . -F -q -all -idkey id | jq -r 'to_entries[] | "\(.key)  \(.value.relativePath)"'
+markdown-tools-cli -dir . -F -q -include-unshared -idkey id
+markdown-tools-cli -dir . -F -q -include-unshared -idkey id | jq -r 'to_entries[] | "\(.key)  \(.value.relativePath)"'
 ```
 
 ### Memory footprint
@@ -437,7 +437,7 @@ markdown-tools-cli -dir . -F -q -all -idkey id | jq -r 'to_entries[] | "\(.key) 
 Useful when a vault is large enough to wonder.
 
 ```sh
-markdown-tools-cli -dir testdata/vault -F -all -memusage > /dev/null
+markdown-tools-cli -dir testdata/vault -F -include-unshared -memusage > /dev/null
 ```
 
 ## Library dependencies
