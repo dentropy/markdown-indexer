@@ -14,7 +14,7 @@ import (
 
 func TestRunWithCheckDups(t *testing.T) {
 	var stdout, stderr strings.Builder
-	err := runWith([]string{"-dir", "testdata", "-pattern", "*.md", "-checkdups"}, &stdout, &stderr, strings.NewReader(""))
+	err := runWith([]string{"-dir", "testdata", "-glob", "*.md", "-check-duplicates"}, &stdout, &stderr, strings.NewReader(""))
 	if err == nil {
 		t.Fatal("want error when duplicate UUIDs are present")
 	}
@@ -33,7 +33,7 @@ func TestRunWithCheckDups(t *testing.T) {
 func TestExamplesDuplicateUUIDs(t *testing.T) {
 	const dupUUID = "123e4567-e89b-12d3-a456-426614174000"
 	var stdout, stderr strings.Builder
-	err := runWith([]string{"-dir", "examples", "-checkdups"}, &stdout, &stderr, strings.NewReader(""))
+	err := runWith([]string{"-dir", "examples", "-check-duplicates"}, &stdout, &stderr, strings.NewReader(""))
 
 	if err == nil {
 		t.Fatal("want error since examples/duplicate.md duplicates a UUID")
@@ -252,7 +252,7 @@ func TestWriteFlagValidation(t *testing.T) {
 	cases := [][]string{
 		{"-dir", ".", "-setshare"},
 		{"-dir", ".", "-initfrontmatter", "-setshare", "-share=true"},
-		{"-dir", ".", "-stripdups", "-initfrontmatter"},
+		{"-dir", ".", "-fix-duplicates", "-initfrontmatter"},
 		{"-dir", ".", "-share=true"},
 		{"-dir", ".", "-initfrontmatter", "-share=maybe"},
 	}
@@ -297,7 +297,7 @@ func TestDocumentsMemoryUsage(t *testing.T) {
 
 func TestRunWithMemUsage(t *testing.T) {
 	var stdout, stderr strings.Builder
-	err := runWith([]string{"-dir", "testdata", "-pattern", "*.md", "-memusage"}, &stdout, &stderr, strings.NewReader(""))
+	err := runWith([]string{"-dir", "testdata", "-glob", "*.md", "-memusage"}, &stdout, &stderr, strings.NewReader(""))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestStripDuplicateFrontMatter(t *testing.T) {
 	writeTestMD(t, dir, "three.md", "---\nuuid: 22222222-2222-2222-2222-222222222222\nshare: true\ntitle: Tres\n---\n\nThree.\n")
 
 	var stdout, stderr strings.Builder
-	err := runWith([]string{"-dir", dir, "-stripdups", "-checkdups"}, &stdout, &stderr, strings.NewReader("y\n"))
+	err := runWith([]string{"-dir", dir, "-fix-duplicates", "-check-duplicates"}, &stdout, &stderr, strings.NewReader("y\n"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
 	}
@@ -405,7 +405,7 @@ func TestStripDuplicateFrontMatterAborts(t *testing.T) {
 	writeTestMD(t, dir, "two.md", content)
 
 	var stdout, stderr strings.Builder
-	err := runWith([]string{"-dir", dir, "-stripdups"}, &stdout, &stderr, strings.NewReader("n\n"))
+	err := runWith([]string{"-dir", dir, "-fix-duplicates"}, &stdout, &stderr, strings.NewReader("n\n"))
 	if err == nil {
 		t.Fatal("want error when the user declines")
 	}
@@ -425,7 +425,7 @@ func TestStripDuplicateFrontMatterAborts(t *testing.T) {
 
 func TestRunWithWikilinks(t *testing.T) {
 	var stdout, stderr strings.Builder
-	err := runWith([]string{"-dir", "testdata", "-pattern", "*.md", "-wikilinks"}, &stdout, &stderr, strings.NewReader(""))
+	err := runWith([]string{"-dir", "testdata", "-glob", "*.md", "-wikilinks"}, &stdout, &stderr, strings.NewReader(""))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -589,7 +589,7 @@ func TestRunWithQuietKeepsVaultCheckReport(t *testing.T) {
 	writeTestMD(t, dir, "b.md", "---\nuuid: 33333333-3333-3333-3333-333333333333\n---\n\nB.\n")
 
 	var stdout, stderr strings.Builder
-	err := runWith([]string{"-dir", dir, "-vaultcheck", "-quiet"}, &stdout, &stderr, strings.NewReader(""))
+	err := runWith([]string{"-dir", dir, "-validate", "-quiet"}, &stdout, &stderr, strings.NewReader(""))
 	if err == nil {
 		t.Fatal("want a non-nil error for a vault with duplicate UUIDs")
 	}
@@ -672,7 +672,7 @@ func TestVaultCheckReportsIssues(t *testing.T) {
 	writeTestMD(t, dir, "no-frontmatter.md", "Deliberately no front matter.\n")
 
 	var stdout, stderr strings.Builder
-	err := runWith([]string{"-dir", dir, "-vaultcheck"}, &stdout, &stderr, strings.NewReader(""))
+	err := runWith([]string{"-dir", dir, "-validate"}, &stdout, &stderr, strings.NewReader(""))
 	if err == nil {
 		t.Fatal("want error when problems are found")
 	}
@@ -703,7 +703,7 @@ func TestVaultCheckClean(t *testing.T) {
 	writeTestMD(t, dir, "no-frontmatter.md", "No front matter is fine here.\n")
 
 	var stdout, stderr strings.Builder
-	err := runWith([]string{"-dir", dir, "-vaultcheck"}, &stdout, &stderr, strings.NewReader(""))
+	err := runWith([]string{"-dir", dir, "-validate"}, &stdout, &stderr, strings.NewReader(""))
 	if err != nil {
 		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
 	}
@@ -735,7 +735,7 @@ func TestRunWithShareFilter(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if err := runWith([]string{"-all", "-dir", dir}, &stdout, &stderr, strings.NewReader("")); err != nil {
+	if err := runWith([]string{"-include-unshared", "-dir", dir}, &stdout, &stderr, strings.NewReader("")); err != nil {
 		t.Fatalf("-all run: %v", err)
 	}
 	docs = map[string]markdownindexer.Document{}
@@ -771,7 +771,7 @@ func TestRunWithShareWikilinks(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if err := runWith([]string{"-all", "-dir", dir, "-wikilinks"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+	if err := runWith([]string{"-include-unshared", "-dir", dir, "-wikilinks"}, &stdout, &stderr, strings.NewReader("")); err != nil {
 		t.Fatalf("-all run: %v", err)
 	}
 	graph = map[string]markdownindexer.Edge{}
