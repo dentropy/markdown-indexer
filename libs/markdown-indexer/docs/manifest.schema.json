@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "markdown-indexer manifest",
+  "description": "The vault manifest: one entry per identified document, listing its title, UUID, and path. It is a single JSON file describing where every document lives, without the document bodies, front matter, or content addresses of the full index. Documents with no UUID are omitted, and entries are ordered by path.",
+  "type": "object",
+  "required": [
+    "documents"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "documents": {
+      "type": "array",
+      "description": "One entry per document with a non-empty UUID, ordered by path and then UUID. Empty when the vault has no identified documents; never null.",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "title": "markdown-indexer manifest entry",
+      "description": "One document, reduced to the three fields needed to find it: title, UUID, and path.",
+      "type": "object",
+      "required": [
+        "title",
+        "uuid",
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The document's display title: its front matter title when that is a non-empty string, otherwise its file name without the .md extension."
+        },
+        "uuid": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The document's UUID, read from front matter under the configured ID key (uuid by default). It is unique per document in a clean vault; duplicate UUIDs appear as multiple entries."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The document's path relative to the vault root, always with forward slashes, matching relativePath in the document index."
+        }
+      }
+    }
+  }
+}

@@ -2,8 +2,9 @@
 
 Indexes a tree of markdown files into an in-memory index of documents, the
 wikilink edges between them, body embed edges, an edge for each inline `#tag`,
-the wikilinks, markdown links, and `#tags` found in front matter, and the
-derived backlinks for each document.
+the wikilinks, markdown links, and `#tags` found in front matter, the derived
+backlinks for each document, and a manifest of every document's title, UUID, and
+path.
 
 ## Use Case
 
@@ -51,6 +52,17 @@ Backlinks are the resolved body `INTERNAL` edges arriving at a document. They
 are computed from the graph, not stored, and every document with a UUID gets an
 entry, empty when nothing links to it. See [Usage](docs/usage.md#backlinks).
 
+```go
+manifest := idx.Manifest() // Manifest{Documents: []ManifestEntry{{Title, UUID, Path}, ...}}
+```
+
+A manifest is the vault's file directory in one value: every document with a
+UUID, ordered by path, carrying only its title, UUID, and path. It is what you
+publish when a consumer needs to turn an identifier into a readable name and
+location without loading the full index. See
+[JSON schema](docs/json-schema.md#json-schema) and
+[`manifest.schema.json`](docs/manifest.schema.json).
+
 ## What is not here
 
 Mirroring. This package produces the index; persisting or querying it is the
@@ -67,7 +79,7 @@ Also absent: writing. Every entry point here only reads.
 | [Usage](docs/usage.md)              | Scanning a vault, narrowing the index, indexing a single document            |
 | [Problems](docs/problems.md)        | Broken files, duplicate UUIDs, and checking a vault                          |
 | [Content addressing](docs/content-addressing.md) | How front matter and edges get their CIDs                           |
-| [JSON schema](docs/json-schema.md)  | The JSON shapes of documents, wikilinks, and backlinks, as `documents.schema.json`, `wikilinks.schema.json`, and `backlinks.schema.json` |
+| [JSON schema](docs/json-schema.md)  | The JSON shapes of documents, wikilinks, backlinks, and the manifest, as `documents.schema.json`, `wikilinks.schema.json`, `backlinks.schema.json`, and `manifest.schema.json` |
 
 ## Development
 

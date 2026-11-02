@@ -64,6 +64,10 @@ _Avoid_: incoming link, reverse link, reference
 The in-memory collection of documents and edges derived from the vault. It is derived and read-only: the vault is always true, and this package never writes back.
 _Avoid_: snapshot, dataset
 
+**Manifest**:
+A single-file directory of the vault: every document with a UUID listed by title, UUID, and path, ordered by path. It is derived from the index, never stored, and carries no bodies, front matter, or content addresses.
+_Avoid_: catalog, sitemap, table of contents
+
 **Scan**:
 One recompute of the whole index. Files that cannot be parsed do not abort the scan; each becomes a problem on the index, so one pass surfaces every fault in the vault.
 _Avoid_: index, run, sweep

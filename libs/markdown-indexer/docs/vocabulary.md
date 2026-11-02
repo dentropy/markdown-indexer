@@ -15,6 +15,7 @@
 | **Front matter edge** | A wikilink, markdown link, or `#name` found in a front matter string. Not a body wikilink, not a body embed, and not a tag. |
 | **Edge**            | One relationship leaving a document: a body wikilink, a body embed, a body tag, or a front matter edge. Keyed by content address. |
 | **Backlink**        | A resolved body `INTERNAL` edge arriving at a document. One entry in that document's published backlinks file. Unlike an edge, it is derived rather than stored in the index. |
+| **Manifest**        | The vault's file directory as one value: every document with a UUID, ordered by path, carrying only its title, UUID, and path. Derived, not stored. |
 | **Index**           | The in-memory collection of documents and edges derived from the vault.                                              |
 | **Problem**         | One structural fault found while indexing or checking: the paths it concerns, and the error that caused it.            |
 

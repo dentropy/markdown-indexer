@@ -1,8 +1,8 @@
 # markdown-tools-cli
 
 A command line tool over a markdown vault: it indexes the vault into documents
-and a wikilink graph, prints them as JSON, publishes each document's backlinks,
-and applies front matter fixes.
+and a wikilink graph, prints them as JSON, publishes each document's backlinks
+and a single-file manifest, and applies front matter fixes.
 
 The indexing is not part of this module. It lives in the sibling
 [`libs/markdown-indexer`](../markdown-indexer), whose package is named
@@ -29,14 +29,16 @@ Requires Go 1.27.
 ```
 
 The default operation writes the document index as JSON. `-wikilinks` writes the
-wikilink graph instead, `-backlinks` writes each document's incoming links, and
-`-validate` reports structural problems and exits non-zero. Every operation is a
-one-shot scan; there is no daemon and no database.
+wikilink graph instead, `-backlinks` writes each document's incoming links,
+`-manifest` writes the vault's title/UUID/path directory, and `-validate` reports
+structural problems and exits non-zero. Every operation is a one-shot scan;
+there is no daemon and no database.
 
 ```sh
 ./markdown-tools-cli -dir examples -include-unshared              # document JSON list
 ./markdown-tools-cli -dir examples -wikilinks        # wikilink graph JSON
 ./markdown-tools-cli -dir examples -backlinks        # incoming links JSON
+./markdown-tools-cli -dir examples -manifest         # title/UUID/path directory JSON
 ./markdown-tools-cli -dir testdata/vault -validate # structural problems
 ```
 
@@ -79,6 +81,7 @@ export VAULT_DIR=`~/Vault`
 | `-backlinks-dir` | *(unset)* | Write one backlinks file per document; implies `-backlinks`  |
 | `-id`        | *(unset)*  | With `-backlinks`, print only that document's file             |
 | `-prune`     | `true`     | With `-backlinks-dir`, delete stale `*.json` files             |
+| `-manifest`  | `false`    | Output a single JSON file of every processed document's `title`, `uuid`, and `path` |
 | `-validate`| `false`    | Report broken front matter and duplicate/missing UUIDs          |
 | `-check-duplicates` | `false`    | Report documents sharing a UUID, after writing the index       |
 | `-fix-duplicates` | `false`    | Assign a fresh UUID to every document sharing one (prompts)    |
@@ -166,6 +169,53 @@ and must not steer the writer outside the directory.
 Both ends of a backlink come from the loaded document set, so the default share
 filter never leaks an unshared document's title or path. `-include-unshared`
 widens sources and targets together.
+
+## Manifest
+
+`-manifest` outputs one JSON file listing every processed document by title,
+UUID, and path, ordered by path. It is the directory of the vault: enough to
+turn an identifier into a readable name and a file location, without the bodies,
+front matter, or content addresses that the document index carries.
+
+```json
+{
+  "documents": [
+    {
+      "title": "Ada Lovelace",
+      "uuid": "b2c3d4e5-2222-4b2d-9f3a-2a3f4e5d6c7b",
+      "path": "People/ada-lovelace.md"
+    },
+    {
+      "title": "CGFS Index",
+      "uuid": "e5f6a7b8-5555-4e50-62d5-5d627a8f90ae",
+      "path": "Projects/cgfs-index.md"
+    }
+  ]
+}
+```
+
+`title` is the document's front matter `title` when that is a non-empty string,
+otherwise its file name without `.md`; it is the same value as a backlink's
+`from_name`. `path` is the same value as `relativePath` in the document index.
+Documents with no UUID are omitted, and an empty result is `"documents": []`
+rather than `null`.
+
+```sh
+# On stdout.
+./markdown-tools-cli -dir testdata/vault -F -q -include-unshared -manifest
+
+# As the single file a site serves.
+./markdown-tools-cli -dir testdata/vault -F -q -include-unshared \
+  -manifest -out site/manifest.json
+```
+
+The share filter applies, so the default run lists only `share: true`
+documents and `-include-unshared` widens it. `-out` names the file and creates
+nothing but the file itself, so its parent directory must already exist.
+`-manifest` is mutually exclusive with `-wikilinks` and `-backlinks`. Duplicate
+UUIDs appear as separate entries because the manifest describes the files that
+exist; `-check-duplicates` is the flag for that fault. The shape is described by
+[`manifest.schema.json`](../markdown-indexer/docs/manifest.schema.json).
 
 ## Writing front matter
 
@@ -476,6 +526,24 @@ markdown-tools-cli -dir testdata/vault -F -q -include-unshared -backlinks-dir si
 find site/backlinks -name '*.json' | wc -l
 ```
 
+### Publishing a manifest
+
+```sh
+# The vault's directory as one file, ready to serve at a fixed path.
+mkdir -p site
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared \
+  -manifest -out site/manifest.json
+
+# Readable title -> path pairs.
+jq -r '.documents[] | "\(.title)\t\(.path)"' site/manifest.json
+
+# Resolve a UUID back to its file.
+jq -r '.documents[] | select(.uuid == "b2c3d4e5-2222-4b2d-9f3a-2a3f4e5d6c7b") | .path' site/manifest.json
+
+# One line per top-level folder.
+jq -r '.documents[].path | split("/")[0]' site/manifest.json | sort | uniq -c
+```
+
 ### Finding duplicates
 
 `-check-duplicates` reports them after writing the index, and exits non-zero, so it
@@ -587,7 +655,7 @@ Manual verification steps are in [MANUAL-TESTING.md](MANUAL-TESTING.md).
 ## Layout
 
 ```
-main.go              flags, orchestration, prompts, share filtering, backlinks, JSON encoding
+main.go              flags, orchestration, prompts, share filtering, backlinks, manifest, JSON encoding
 main_test.go         the tests
 examples/            four small files, including a deliberate duplicate UUID
 testdata/            a realistic vault, used by the tests and most examples

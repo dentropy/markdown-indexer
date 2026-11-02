@@ -78,6 +78,25 @@ markdown-tools-cli -dir ./notes -backlinks            # JSON on stdout
 markdown-tools-cli -dir ./notes -backlinks-dir site/backlinks  # one file per document
 ```
 
+## Publish a manifest
+
+The manifest is one JSON file describing where every document lives: its title,
+UUID, and path, ordered by path. It is the directory a site serves so a consumer
+can resolve an identifier without loading the whole index.
+
+```go
+manifest := idx.Manifest()
+```
+
+From the CLI:
+
+```sh
+mkdir -p site
+markdown-tools-cli -dir ./notes -manifest -out site/manifest.json
+```
+
+Shape: [`manifest.schema.json`](libs/markdown-indexer/docs/manifest.schema.json).
+
 ## A note on the names
 
 The **vault** is the domain term: a directory tree of markdown files, the source

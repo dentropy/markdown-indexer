@@ -971,3 +971,102 @@ func TestBacklinksFlagValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestRunWithManifest(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "a/alpha.md", "---\nuuid: aaa\ntitle: Alpha\nshare: true\n---\n\nAlpha.\n")
+	writeTestMD(t, dir, "b/beta.md", "---\nuuid: bbb\nshare: true\n---\n\nBeta.\n")
+	writeTestMD(t, dir, "private.md", "---\nuuid: ccc\nshare: false\n---\n\nPrivate.\n")
+
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-manifest"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+	}
+
+	var got markdownindexer.Manifest
+	if err := json.Unmarshal([]byte(stdout.String()), &got); err != nil {
+		t.Fatalf("stdout is not a manifest: %v\n%s", err, stdout.String())
+	}
+	want := []markdownindexer.ManifestEntry{
+		{Title: "Alpha", UUID: "aaa", Path: "a/alpha.md"},
+		{Title: "beta", UUID: "bbb", Path: "b/beta.md"},
+	}
+	if !reflect.DeepEqual(got.Documents, want) {
+		t.Errorf("documents = %+v, want %+v", got.Documents, want)
+	}
+	if strings.Contains(stdout.String(), "ccc") {
+		t.Errorf("the default share filter must not leak an unshared document: %s", stdout.String())
+	}
+
+	stdout.Reset()
+	if err := runWith([]string{"-dir", dir, "-manifest", "-include-unshared"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := json.Unmarshal([]byte(stdout.String()), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Documents) != 3 {
+		t.Errorf("-include-unshared should widen the manifest, got %+v", got.Documents)
+	}
+}
+
+func TestRunWithManifestEmpty(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "no-uuid.md", "---\ntitle: Anonymous\n---\n\nNo UUID.\n")
+
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-manifest"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"documents": []`) {
+		t.Errorf("an empty manifest must encode documents as []: %s", stdout.String())
+	}
+}
+
+func TestRunWithManifestOut(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "note.md", "---\nuuid: aaa\ntitle: Note\nshare: true\n---\n\nNote.\n")
+	out := filepath.Join(t.TempDir(), "site", "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-manifest", "-out", out}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("-out should carry the JSON, got stdout: %s", stdout.String())
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got markdownindexer.Manifest
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("%s is not a manifest: %v\n%s", out, err, data)
+	}
+	if len(got.Documents) != 1 || got.Documents[0].UUID != "aaa" {
+		t.Errorf("manifest = %+v", got.Documents)
+	}
+}
+
+func TestManifestFlagValidation(t *testing.T) {
+	dir := t.TempDir()
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"manifest and wikilinks", []string{"-dir", dir, "-manifest", "-wikilinks"}},
+		{"manifest and backlinks", []string{"-dir", dir, "-manifest", "-backlinks"}},
+		{"manifest and backlinks dir", []string{"-dir", dir, "-manifest", "-backlinks-dir", t.TempDir()}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var stdout, stderr strings.Builder
+			if err := runWith(c.args, &stdout, &stderr, strings.NewReader("")); err == nil {
+				t.Fatalf("want an error for %v", c.args)
+			}
+		})
+	}
+}

@@ -30,6 +30,7 @@ type options struct {
 	setShare        bool
 	share           string
 	memUsage        bool
+	manifest        bool
 	wikilinks       bool
 	backlinks       bool
 	backlinksDir    string
@@ -167,6 +168,10 @@ func runWith(args []string, stdout, stderr io.Writer, stdin io.Reader) error {
 		if err := enc.Encode(graph); err != nil {
 			return fmt.Errorf("encode wikilink graph: %w", err)
 		}
+	case opts.manifest:
+		if err := enc.Encode(markdownindexer.BuildManifest(docs)); err != nil {
+			return fmt.Errorf("encode manifest: %w", err)
+		}
 	default:
 		if opts.force {
 			docs = filterMarshalable(docs, func(d markdownindexer.Document) string {
@@ -284,6 +289,7 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&opts.setShare, "setshare", false, "set share on every matched document and add a uuid where one is missing; requires -share")
 	fs.StringVar(&opts.share, "share", "", "share value for -initfrontmatter and -setshare (true or false)")
 	fs.BoolVar(&opts.memUsage, "memusage", false, "print an estimate of the memory used by the documents struct")
+	fs.BoolVar(&opts.manifest, "manifest", false, "output a single JSON file listing every processed document's title, uuid, and path")
 	fs.BoolVar(&opts.wikilinks, "wikilinks", false, "output a JSON graph of wikilinks instead of the document index")
 	fs.BoolVar(&opts.backlinks, "backlinks", false, "output each document's incoming links instead of the document index")
 	fs.StringVar(&opts.backlinksDir, "backlinks-dir", "", "write one backlinks JSON file per document into this directory (implies -backlinks)")
@@ -309,8 +315,14 @@ func parseFlags(args []string) (options, error) {
 	if opts.backlinksDir != "" {
 		opts.backlinks = true
 	}
-	if opts.wikilinks && opts.backlinks {
-		return options{}, errors.New("-wikilinks and -backlinks are mutually exclusive")
+	outputModes := 0
+	for _, on := range []bool{opts.wikilinks, opts.backlinks, opts.manifest} {
+		if on {
+			outputModes++
+		}
+	}
+	if outputModes > 1 {
+		return options{}, errors.New("-wikilinks, -backlinks, and -manifest are mutually exclusive")
 	}
 	if opts.backlinksDir != "" && opts.out != "" {
 		return options{}, errors.New("-backlinks-dir cannot be combined with -out")

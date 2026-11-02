@@ -96,6 +96,30 @@ with the greatest relative path, the same rule as `Index.ByUUID`. With
 `Shared: true`, both ends of a backlink come from the surviving documents, so an
 unshared document never appears as a source.
 
+## Manifest
+
+The manifest is the vault's file directory as one value: every document with a
+UUID, ordered by path, carrying only its title, UUID, and path.
+
+```go
+manifest := idx.Manifest()
+for _, entry := range manifest.Documents {
+	fmt.Println(entry.UUID, entry.Path, entry.Title)
+}
+```
+
+`Title` is the document's display title: its front matter `title` when that is a
+non-empty string, otherwise its file name without `.md`, the same value as a
+backlink's `from_name`. `Path` is `Document.RelativePath`. Documents with an
+empty UUID are omitted, and `Documents` is a non-nil empty slice when none are
+left, so JSON emits `[]` rather than `null`. `BuildManifest(docs)` does the same
+for documents held somewhere other than an index.
+
+Unlike the document index, the manifest names the UUID as a field and does not
+collapse duplicates: two documents claiming one UUID are two entries, because
+the manifest describes the files that exist. The shape is
+[manifest.schema.json](manifest.schema.json).
+
 ## Narrowing the index
 
 ```go

@@ -65,6 +65,30 @@ An unlinked document's file must contain `"backlinks": []`, and a front matter
 jq 'select(.backlinks == [])' /tmp/backlinks/*.json
 ```
 
+#### Manifest
+
+One JSON file listing every processed document by title, UUID, and path, ordered
+by path. It is the shape to publish at a fixed site path.
+
+``` bash
+# The directory of the whole fixture vault.
+./markdown-tools-cli -dir testdata/vault -F -include-unshared -manifest
+
+# Served as one file.
+./markdown-tools-cli -dir testdata/vault -F -q -include-unshared -manifest -out /tmp/manifest.json
+jq -r '.documents[] | "\(.uuid)\t\(.path)"' /tmp/manifest.json
+
+# Stable across runs, like every other output.
+./markdown-tools-cli -dir testdata/vault -F -q -include-unshared -manifest > /tmp/m1.json
+./markdown-tools-cli -dir testdata/vault -F -q -include-unshared -manifest > /tmp/m2.json
+diff /tmp/m1.json /tmp/m2.json && echo "manifest: stable"
+```
+
+Expect one entry per identified document, including the deliberate
+`duplicate-a.md` / `duplicate-b.md` UUID twice: a manifest lists the files that
+exist. Documents with no UUID are absent, and a vault with none gives
+`"documents": []`.
+
 #### Vault check
 
 Reports structural problems and exits non-zero, which is what makes it usable as
