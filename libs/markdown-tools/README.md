@@ -1,6 +1,7 @@
 # markdown-tools
 
-Writes front matter in a markdown vault. It is the write half of the
+Writes derived output: front matter in a markdown vault, and backlinks JSON in a
+publish directory. It is the write half of the
 [markdown-indexer](../../README.md) repo: the sibling
 [`markdown-indexer`](../markdown-indexer) only reads, and this package imports
 its index to decide what to change.
@@ -28,6 +29,7 @@ Scan with `markdownindexer`, then hand the resulting index to one of:
 func InitFrontMatter(ix *markdownindexer.Index, dir, idKey string, share *bool) ([]string, error)
 func SetShare(ix *markdownindexer.Index, dir, idKey string, share bool) ([]string, error)
 func ReplaceDuplicateUUIDs(ix *markdownindexer.Index, dir, idKey string) ([]string, error)
+func WriteBacklinks(backlinks map[string]markdownindexer.Backlinks, dir string, opts BacklinksOptions) (written, removed []string, err error)
 ```
 
 Each returns the relative paths of the files it actually rewrote. Nothing here
@@ -77,6 +79,30 @@ Every document sharing a UUID gets a fresh one. Unique UUIDs are untouched.
 This is the write behind the CLI's `-stripdups` flag; the CLI owns the
 confirmation prompt.
 
+### Publish backlinks
+
+```go
+backlinks := idx.Backlinks() // or markdownindexer.BuildBacklinks(docs)
+written, removed, err := markdowntools.WriteBacklinks(
+	backlinks,
+	"./site/backlinks",
+	markdowntools.BacklinksOptions{Prune: true},
+)
+```
+
+One file per document, named `<document_id>.json`, matching
+[`backlinks.schema.json`](../markdown-indexer/docs/backlinks.schema.json). The
+map key is authoritative: it is both the file name and the `document_id` in the
+file, and a nil slice becomes `"backlinks": []`.
+
+Writes are atomic and skipped when the bytes do not change, so a repeat run is
+cheap. With `Prune`, regular `*.json` files in the directory that do not belong
+to the set are removed after the writes; subdirectories, symlinks, and other
+files are left alone, and an empty set clears the directory. An ID that cannot
+be a single file name (a path separator, `..`, a control character) fails the
+call before anything is written: document IDs come from front matter, and one
+must not be able to steer the writer outside the directory.
+
 ## Byte-level editing
 
 When you already hold a file's bytes, `SetFrontMatterValue` performs the same
@@ -94,7 +120,8 @@ preserved. Unterminated front matter is an error rather than a silent no-op.
 
 This package never scans or indexes on its own. That keeps one source of truth
 for what a vault contains (`markdownindexer.Scan`) and one place where writing
-happens (here). The CLI composes them.
+happens (here). Backlinks are computed by `markdownindexer` and handed over as a
+map; this package only turns them into files. The CLI composes all of it.
 
 ## Test
 
