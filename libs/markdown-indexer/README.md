@@ -58,7 +58,7 @@ Also absent: writing. Every entry point here only reads.
 | [Usage](docs/usage.md)              | Scanning a vault, narrowing the index, indexing a single document            |
 | [Problems](docs/problems.md)        | Broken files, duplicate UUIDs, and checking a vault                          |
 | [Content addressing](docs/content-addressing.md) | How front matter and edges get their CIDs                           |
-| [JSON schema](docs/json-schema.md)  | The JSON shapes of documents and wikilinks, as `documents.schema.json` and `wikilinks.schema.json` |
+| [JSON schema](docs/json-schema.md)  | The JSON shapes of documents, wikilinks, and backlinks, as `documents.schema.json`, `wikilinks.schema.json`, and `backlinks.schema.json` |
 
 ## Development
 

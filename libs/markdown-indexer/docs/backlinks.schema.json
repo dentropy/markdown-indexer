@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/backlinks.schema.json",
+  "title": "static publisher backlinks",
+  "description": "The incoming links for one document, published at /backlinks/$UUID.json. It is derived from markdown-index's wikilink graph: every resolved INTERNAL edge whose target is a published document becomes one entry on that document. Unresolved targets, website links, and self-links are dropped. Every published document has a file, with an empty array when nothing links to it.",
+  "type": "object",
+  "required": ["document_id", "backlinks"],
+  "additionalProperties": false,
+  "properties": {
+    "document_id": {
+      "type": "string",
+      "description": "The UUID of the document these are backlinks for. It is also the file name."
+    },
+    "backlinks": {
+      "type": "array",
+      "description": "Incoming links, sorted by source title, then link title, then source UUID.",
+      "items": { "$ref": "#/$defs/backlink" }
+    }
+  },
+  "$defs": {
+    "backlink": {
+      "title": "backlink",
+      "description": "One resolved wikilink pointing at the document.",
+      "type": "object",
+      "required": ["from_document_id", "from_name", "from_relative_path", "title", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "from_document_id": {
+          "type": "string",
+          "description": "UUID of the source document. The frontend routes to /#/$from_document_id."
+        },
+        "from_name": {
+          "type": "string",
+          "description": "The source document's display title (front matter title, else file name)."
+        },
+        "from_relative_path": {
+          "type": "string",
+          "description": "The source document's path relative to the vault root, with forward slashes."
+        },
+        "title": {
+          "type": "string",
+          "description": "The link's display text: the pipe alias when present, otherwise the raw target."
+        },
+        "label": {
+          "const": "INTERNAL",
+          "description": "Only resolved internal links become backlinks. Website links have no document UUID to attach to."
+        }
+      }
+    }
+  }
+}

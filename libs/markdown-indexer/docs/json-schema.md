@@ -7,6 +7,7 @@ field names are fixed. The schemas are kept as files next to this one:
 | --------------------------------------------- | -------------------------------------------------- | ------------------ |
 | [documents.schema.json](documents.schema.json) | The document index, keyed by UUID                  | `$defs.document`   |
 | [wikilinks.schema.json](wikilinks.schema.json) | The graph of wikilinks, inline tags, and front matter edges, keyed by content address | `$defs.wikilink`   |
+| [backlinks.schema.json](backlinks.schema.json) | The incoming links for one document, published at `/backlinks/$UUID.json` | `$defs.backlink` |
 
 Each file validates both levels: the root is the envelope the CLI prints, and
 `$defs` holds a single entry inside it.
@@ -24,6 +25,14 @@ validate(next(iter(vault.values())), schema["$defs"]["document"])  # one documen
 
 The graph works the same way: `wikilinks.schema.json` at the root,
 `$defs.wikilink` for one edge.
+
+Backlinks are not part of the index this package produces; they are derived from
+it. `backlinks.schema.json` describes the per-document file a consumer publishes:
+every resolved `INTERNAL` edge whose target is a published document becomes one
+entry on that target. Unresolved targets, `URL` edges, and self-links are
+dropped, and a document with no incoming links still gets a file with an empty
+`backlinks` array. The envelope is one document's file, and `$defs.backlink` is
+one entry inside it.
 
 The UUID is not a field of its own. `Document.ID` is deliberately not
 serialized: it is read out of `metadata` under `Options.IDKey`, and it is what
