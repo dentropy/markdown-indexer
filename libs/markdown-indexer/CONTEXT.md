@@ -54,6 +54,10 @@ _Avoid_: front matter tag, metadata link
 One relationship leaving a document: a body wikilink, a body embed, a body tag, or a front matter edge. Keyed by its content address, so identical edges dedupe.
 _Avoid_: link object, relationship
 
+**Backlink**:
+A resolved body `INTERNAL` edge arriving at a document. The incoming links are derived from the graph, not stored in the index; every document with a UUID publishes one entry, empty when nothing links to it. A front matter edge is not a backlink.
+_Avoid_: incoming link, reverse link, reference
+
 ## The index
 
 **Index**:

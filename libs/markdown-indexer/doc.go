@@ -13,6 +13,12 @@
 // The index is derived. It is a one-way read of the vault: this package never
 // writes to it.
 //
+// Backlinks are derived from the graph rather than stored. Backlinks and
+// BuildBacklinks turn the resolved body INTERNAL edges arriving at a document
+// into that document's incoming links, the shape a publisher serves at
+// backlinks/<uuid>.json. Every document with a UUID gets an entry, empty when
+// nothing links to it.
+//
 //	idx, err := markdownindexer.Scan("./notes", markdownindexer.Options{})
 //	if err != nil {
 //		return err

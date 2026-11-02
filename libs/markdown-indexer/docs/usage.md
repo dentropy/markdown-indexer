@@ -63,6 +63,39 @@ differs.
 `Shared` applies to every edge, because the graph is built from the documents
 that survive the filter.
 
+## Backlinks
+
+A backlink is one resolved body `INTERNAL` edge arriving at a document. The
+incoming links are derived, never stored in the index:
+
+```go
+backlinks := idx.Backlinks()
+for id, doc := range backlinks {
+	fmt.Println(id, len(doc.Backlinks))
+}
+```
+
+`Backlinks()` returns a map keyed by the target document's UUID, the shape
+published at `backlinks/<uuid>.json` (see
+[backlinks.schema.json](backlinks.schema.json)). `BuildBacklinks(docs)` does the
+same for documents held somewhere other than an index, mirroring `BuildEdges`.
+Every document with a non-empty UUID gets an entry, with a non-nil empty slice
+when nothing links to it, so JSON emits `[]` rather than `null`.
+
+Only resolved body wikilinks become backlinks. Unresolved targets, `URL` edges,
+tags, embeds, self-links, and every `FRONTMATTER_*` edge are dropped: a
+`[[link]]` in front matter is a front matter edge, not a backlink. Each entry
+carries the source's UUID, display name, and relative path, the link's title
+(the pipe alias when present, otherwise the raw target), and the fixed label
+`INTERNAL`.
+
+`from_name` is the source's front matter `title` when it is a non-empty string,
+otherwise its file name. Entries are sorted by `from_name`, then `title`, then
+`from_document_id`. Duplicate UUIDs resolve deterministically to the document
+with the greatest relative path, the same rule as `Index.ByUUID`. With
+`Shared: true`, both ends of a backlink come from the surviving documents, so an
+unshared document never appears as a source.
+
 ## Narrowing the index
 
 ```go

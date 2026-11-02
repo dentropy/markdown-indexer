@@ -40,10 +40,12 @@ the `documents.schema.json` root is keyed by. The `$defs.document` shape is
 therefore what a single entry under that key looks like, not the envelope
 itself.
 
-`label` is an enum of six values. Body wikilinks are `INTERNAL` or `URL`.
-`TAG` is an inline `#tag` in the body. Front matter strings produce
-`FRONTMATTER_INTERNAL`, `FRONTMATTER_URL`, and `FRONTMATTER_TAG` instead, so
-they do not share an address with a body edge. `TAG` and `FRONTMATTER_TAG` store
+`label` is an enum of twelve values in three families. Body hits are
+`INTERNAL`, `INTERNAL_MISSING`, `URL`, `TAG`, `INTERNAL_ASSET`,
+`EXTERNAL_ASSET`, `EMBEDDED_MARKDOWN`, and `EMBEDDED_MARKDOWN_MISSING`. Front
+matter strings produce `FRONTMATTER_INTERNAL`, `FRONTMATTER_INTERNAL_MISSING`,
+`FRONTMATTER_URL`, and `FRONTMATTER_TAG` instead, so they do not share an
+address with a body edge. `TAG` and `FRONTMATTER_TAG` store
 the text without `#` in both `title` and `to_document_id`, and neither resolves
 to a document UUID. The front matter `tags` field does not produce either label.
 `title` and `to_document_id` are free-form on purpose: an unresolved target is

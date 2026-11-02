@@ -2,16 +2,17 @@
 
 Indexes a tree of markdown files into an in-memory index of documents, the
 wikilink edges between them, body embed edges, an edge for each inline `#tag`,
-and the wikilinks, markdown links, and `#tags` found in front matter.
+the wikilinks, markdown links, and `#tags` found in front matter, and the
+derived backlinks for each document.
 
 ## Use Case
 
 > You have a vault of markdown notes full of `[[wikilinks]]` and `#tags`.  
 > You want the documents and the links between them as data, not as a database.  
 > Scan the vault and get a content-addressed index of every document, every
-> resolved wikilink, every body embed, every inline tag, and every wikilink,
-> markdown link, and `#tag` in front matter, then hand it to whatever consumes
-> it.  
+> resolved wikilink, every body embed, every inline tag, every wikilink,
+> markdown link, and `#tag` in front matter, and each document's incoming
+> links, then hand it to whatever consumes it.  
 > The vault stays the source of truth: nothing here writes back.
 
 ```go
@@ -41,6 +42,14 @@ acts on an index.
 
 The vault is the source of truth; the index is derived. This package only ever
 reads it.
+
+```go
+backlinks := idx.Backlinks() // map[target UUID]Backlinks, derived on demand
+```
+
+Backlinks are the resolved body `INTERNAL` edges arriving at a document. They
+are computed from the graph, not stored, and every document with a UUID gets an
+entry, empty when nothing links to it. See [Usage](docs/usage.md#backlinks).
 
 ## What is not here
 

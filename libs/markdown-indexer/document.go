@@ -68,6 +68,18 @@ func (d Document) FrontMatter() map[string]any {
 	return m
 }
 
+// DisplayName returns the document's display title: the top-level "title"
+// front matter value when it is a non-empty string, otherwise Name. A
+// non-string or whitespace-only title falls back to the file name.
+func (d Document) DisplayName() string {
+	if title, ok := d.FrontMatter()["title"].(string); ok {
+		if title = strings.TrimSpace(title); title != "" {
+			return title
+		}
+	}
+	return d.Name
+}
+
 // Parse indexes a single markdown document held in memory. relPath is the
 // document's path relative to the vault root, used for both RelativePath and
 // Name. idKey is the front matter key holding the document's UUID, defaulting
