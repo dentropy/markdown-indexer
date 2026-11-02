@@ -35,11 +35,11 @@ structural problems and exits non-zero. Every operation is a one-shot scan;
 there is no daemon and no database.
 
 ```sh
-./markdown-tools-cli -dir examples -include-unshared              # document JSON list
+./markdown-tools-cli -dir examples -include-unshared # document JSON list
 ./markdown-tools-cli -dir examples -wikilinks        # wikilink graph JSON
 ./markdown-tools-cli -dir examples -backlinks        # incoming links JSON
 ./markdown-tools-cli -dir examples -manifest         # title/UUID/path directory JSON
-./markdown-tools-cli -dir testdata/vault -validate # structural problems
+./markdown-tools-cli -dir testdata/vault -validate   # structural problems
 ```
 
 ``` bash
