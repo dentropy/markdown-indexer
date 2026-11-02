@@ -47,10 +47,11 @@ type RepairResult struct {
 }
 
 // RepairFrontMatter quotes plain YAML scalar values that contain a colon
-// followed by a space, the most common reason a vault's front matter fails to
-// parse. A file is only rewritten when the whole front matter block parses
-// afterwards; anything still broken is reported in Unrepairable and left
-// untouched. Bodies and front matter delimiters are never modified.
+// followed by a space, and closes unbalanced quotes in a single-line flow
+// sequence (`tags: [ 'a', 'b ]`). Those are the usual reasons a vault's front
+// matter fails to parse. A file is only rewritten when the whole front matter
+// block parses afterwards; anything still broken is reported in Unrepairable
+// and left untouched. Bodies and front matter delimiters are never modified.
 //
 // Unlike the index-based writers, this one walks the vault directly: a file
 // whose front matter does not parse never reaches an index, so it is invisible
@@ -177,10 +178,15 @@ func repairQuotedFrontMatter(data []byte, start, end int, content []string, clos
 			lastValueIndent = indent
 		default:
 			lastValueIndent = indent
-			if startsPlainScalar(scalar) && needsQuoting(scalar) {
-				fixed[i] = body[:valueStart] + quoteScalar(scalar) + comment + eol
-				fields = append(fields, key)
+			repaired, keepComment, ok := repairFrontMatterValue(value, scalar)
+			if !ok {
+				break
 			}
+			if !keepComment {
+				comment = ""
+			}
+			fixed[i] = body[:valueStart] + repaired + comment + eol
+			fields = append(fields, key)
 		}
 	}
 
@@ -271,6 +277,81 @@ func splitFrontMatterComment(value string) (scalar, comment string) {
 		}
 	}
 	return strings.TrimRight(value, " \t"), ""
+}
+
+// repairFrontMatterValue rewrites one mapping value. Unbalanced quotes are
+// closed on the raw value so a `#` inside the quote is not treated as a
+// comment; colon-space quoting still uses the comment-stripped scalar.
+func repairFrontMatterValue(value, scalar string) (repaired string, keepComment, ok bool) {
+	if unclosedQuote(value) != 0 {
+		closed, changed := closeUnbalancedQuotes(value)
+		return closed, false, changed
+	}
+	if startsPlainScalar(scalar) && needsQuoting(scalar) {
+		return quoteScalar(scalar), true, true
+	}
+	return "", false, false
+}
+
+// unclosedQuote returns the quote byte still open at the end of s, or 0 when
+// quotes are balanced. YAML single quotes are escaped by doubling; double
+// quotes use a backslash.
+func unclosedQuote(s string) byte {
+	var q byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch q {
+		case '\'':
+			if c != '\'' {
+				continue
+			}
+			if i+1 < len(s) && s[i+1] == '\'' {
+				i++
+				continue
+			}
+			q = 0
+		case '"':
+			if c == '\\' {
+				if i+1 < len(s) {
+					i++
+				}
+				continue
+			}
+			if c == '"' {
+				q = 0
+			}
+		default:
+			if c == '\'' || c == '"' {
+				q = c
+			}
+		}
+	}
+	return q
+}
+
+// closeUnbalancedQuotes inserts the missing closer. In a flow collection it
+// goes before the last ] or } so `tags: [ 'a', 'b ]` becomes
+// `tags: [ 'a', 'b' ]`; otherwise it is appended.
+func closeUnbalancedQuotes(s string) (string, bool) {
+	q := unclosedQuote(s)
+	if q == 0 {
+		return s, false
+	}
+	trimmed := strings.TrimLeft(s, " \t")
+	if trimmed != "" && (trimmed[0] == '[' || trimmed[0] == '{') {
+		closer := byte(']')
+		if trimmed[0] == '{' {
+			closer = '}'
+		}
+		if idx := strings.LastIndexByte(s, closer); idx >= 0 {
+			insert := idx
+			for insert > 0 && (s[insert-1] == ' ' || s[insert-1] == '\t') {
+				insert--
+			}
+			return s[:insert] + string(q) + s[insert:], true
+		}
+	}
+	return s + string(q), true
 }
 
 // startsPlainScalar reports whether value can be read as a plain scalar in the

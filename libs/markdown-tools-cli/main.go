@@ -294,7 +294,7 @@ func parseFlags(args []string) (options, error) {
 	fs.StringVar(&opts.idKey, "idkey", "uuid", "YAML front matter key holding the document UUID")
 	fs.BoolVar(&opts.checkDup, "check-duplicates", false, "report documents that share the same UUID")
 	fs.BoolVar(&opts.stripDup, "fix-duplicates", false, "replace the UUID of every document with a duplicate UUID with a fresh one, keeping the rest of its front matter (prompts for confirmation)")
-	fs.BoolVar(&opts.fixFrontMatter, "fix-frontmatter", false, "quote plain YAML scalars that contain a colon followed by a space so the front matter parses (prompts for confirmation)")
+	fs.BoolVar(&opts.fixFrontMatter, "fix-frontmatter", false, "quote plain YAML scalars that contain a colon-space and close unbalanced quotes in flow sequences so the front matter parses (prompts for confirmation)")
 	fs.BoolVar(&opts.initFrontMatter, "initfrontmatter", false, "add missing uuid and share front matter to every matched document (share defaults to false)")
 	fs.BoolVar(&opts.setShare, "setshare", false, "set share on every matched document and add a uuid where one is missing; requires -share")
 	fs.StringVar(&opts.share, "share", "", "share value for -initfrontmatter and -setshare (true or false)")
@@ -510,12 +510,12 @@ func repairBrokenFrontMatter(opts options, stdin io.Reader, stderr io.Writer) er
 	}
 	if len(planned.Fixes) == 0 {
 		if len(planned.Unrepairable) == 0 {
-			fmt.Fprintln(stderr, "no unquoted colon-space scalars found; nothing to fix")
+			fmt.Fprintln(stderr, "no repairable front matter found; nothing to fix")
 		}
 		return nil
 	}
 
-	fmt.Fprintf(stderr, "The following %d document(s) have unquoted colon-space scalars. Each one will be quoted in place:\n", len(planned.Fixes))
+	fmt.Fprintf(stderr, "The following %d document(s) have invalid YAML scalars. Each one will be quoted in place:\n", len(planned.Fixes))
 	for _, f := range planned.Fixes {
 		fmt.Fprintf(stderr, "  %s (%s)\n", f.Path, strings.Join(f.Fields, ", "))
 	}

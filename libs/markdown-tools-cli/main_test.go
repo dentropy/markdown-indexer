@@ -485,6 +485,44 @@ func TestFixFrontMatter(t *testing.T) {
 	}
 }
 
+func TestFixFrontMatterUnclosedTagQuote(t *testing.T) {
+	dir := t.TempDir()
+	broken := "---\ntitle: Parallel\ndate: 2021-04-25\nauthor: m0wer\ntags: [ 'parallelization', 'gnu_linux ]\nuuid: keep-me\nshare: true\n---\n\n[GNU parallel](https://www.gnu.org/software/parallel/) is a shell tool.\n"
+	writeTestMD(t, dir, "parallel.md", broken)
+
+	var stdout, stderr strings.Builder
+	err := runWith([]string{"-dir", dir, "-fix-frontmatter"}, &stdout, &stderr, strings.NewReader("y\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "parallel.md (tags)") {
+		t.Errorf("stderr should list the file and field before the prompt: %s", stderr.String())
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "parallel.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "tags: [ 'parallelization', 'gnu_linux' ]") {
+		t.Errorf("tags quote should be closed: %s", data)
+	}
+	if !strings.Contains(string(data), "[GNU parallel]") {
+		t.Errorf("body was modified: %s", data)
+	}
+
+	var docs map[string]markdownindexer.Document
+	if json.Unmarshal([]byte(stdout.String()), &docs) != nil {
+		t.Fatalf("stdout should be a valid index: %s", stdout.String())
+	}
+	doc, ok := docs["keep-me"]
+	if !ok {
+		t.Fatalf("repaired document should be keyed by its uuid: %s", stdout.String())
+	}
+	if doc.DisplayName() != "Parallel" {
+		t.Errorf("title = %q, want Parallel", doc.DisplayName())
+	}
+}
+
 func TestFixFrontMatterAborts(t *testing.T) {
 	dir := t.TempDir()
 	broken := "---\ntitle: A: B\nshare: true\n---\n\nBody.\n"

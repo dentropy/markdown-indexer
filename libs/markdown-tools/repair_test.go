@@ -64,6 +64,42 @@ func TestRepairFrontMatterData(t *testing.T) {
 			fields: []string{"title"},
 		},
 		{
+			name:   "closes an unclosed single quote in a flow sequence",
+			in:     "---\ntitle: Parallel\ndate: 2021-04-25\nauthor: m0wer\ntags: [ 'parallelization', 'gnu_linux ]\n---\n\nBody.\n",
+			want:   "---\ntitle: Parallel\ndate: 2021-04-25\nauthor: m0wer\ntags: [ 'parallelization', 'gnu_linux' ]\n---\n\nBody.\n",
+			fields: []string{"tags"},
+		},
+		{
+			name:   "closes an unclosed double quote in a flow sequence",
+			in:     "---\ntags: [ \"a\", \"b ]\n---\n",
+			want:   "---\ntags: [ \"a\", \"b\" ]\n---\n",
+			fields: []string{"tags"},
+		},
+		{
+			name:   "closes an unclosed quote before a trailing comment",
+			in:     "---\ntags: [ 'a', 'b ] # note\n---\n",
+			want:   "---\ntags: [ 'a', 'b' ] # note\n---\n",
+			fields: []string{"tags"},
+		},
+		{
+			name:   "closes an unclosed quoted scalar",
+			in:     "---\ntitle: 'Parallel\n---\n",
+			want:   "---\ntitle: 'Parallel'\n---\n",
+			fields: []string{"title"},
+		},
+		{
+			name:   "keeps doubled single quotes while closing the last item",
+			in:     "---\ntags: [ 'it''s', 'b ]\n---\n",
+			want:   "---\ntags: [ 'it''s', 'b' ]\n---\n",
+			fields: []string{"tags"},
+		},
+		{
+			name:   "quotes a colon-space title and closes an unclosed tag quote",
+			in:     "---\ntitle: A: B\ntags: [ 'x ]\n---\n",
+			want:   "---\ntitle: \"A: B\"\ntags: [ 'x' ]\n---\n",
+			fields: []string{"title", "tags"},
+		},
+		{
 			name: "leaves valid front matter byte-for-byte alone",
 			in:   "---\ntitle: Fine\ndate: 2019-09-07\ntags: [ 'a', 'b' ]\nurl: http://example.com\n---\n\nBody.\n",
 			want: "---\ntitle: Fine\ndate: 2019-09-07\ntags: [ 'a', 'b' ]\nurl: http://example.com\n---\n\nBody.\n",
