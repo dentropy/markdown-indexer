@@ -27,6 +27,7 @@ type options struct {
 	checkDup        bool
 	stripDup        bool
 	initFrontMatter bool
+	fixFrontMatter  bool
 	setShare        bool
 	share           string
 	memUsage        bool
@@ -99,6 +100,14 @@ func runWith(args []string, stdout, stderr io.Writer, stdin io.Reader) error {
 	notices := stderr
 	if opts.quiet {
 		notices = io.Discard
+	}
+
+	// Quoting repair walks the vault as raw bytes: a file whose front matter
+	// does not parse never reaches an index, so it has to run before Scan.
+	if opts.fixFrontMatter {
+		if err := repairBrokenFrontMatter(opts, stdin, stderr); err != nil {
+			return err
+		}
 	}
 
 	ix, err := scanVault(opts, notices)
@@ -285,6 +294,7 @@ func parseFlags(args []string) (options, error) {
 	fs.StringVar(&opts.idKey, "idkey", "uuid", "YAML front matter key holding the document UUID")
 	fs.BoolVar(&opts.checkDup, "check-duplicates", false, "report documents that share the same UUID")
 	fs.BoolVar(&opts.stripDup, "fix-duplicates", false, "replace the UUID of every document with a duplicate UUID with a fresh one, keeping the rest of its front matter (prompts for confirmation)")
+	fs.BoolVar(&opts.fixFrontMatter, "fix-frontmatter", false, "quote plain YAML scalars that contain a colon followed by a space so the front matter parses (prompts for confirmation)")
 	fs.BoolVar(&opts.initFrontMatter, "initfrontmatter", false, "add missing uuid and share front matter to every matched document (share defaults to false)")
 	fs.BoolVar(&opts.setShare, "setshare", false, "set share on every matched document and add a uuid where one is missing; requires -share")
 	fs.StringVar(&opts.share, "share", "", "share value for -initfrontmatter and -setshare (true or false)")
@@ -334,13 +344,13 @@ func parseFlags(args []string) (options, error) {
 		return options{}, errors.New("-id cannot be combined with -backlinks-dir")
 	}
 	writeModes := 0
-	for _, on := range []bool{opts.stripDup, opts.initFrontMatter, opts.setShare} {
+	for _, on := range []bool{opts.stripDup, opts.fixFrontMatter, opts.initFrontMatter, opts.setShare} {
 		if on {
 			writeModes++
 		}
 	}
 	if writeModes > 1 {
-		return options{}, errors.New("-stripdups, -initfrontmatter, and -setshare are mutually exclusive")
+		return options{}, errors.New("-fix-duplicates, -fix-frontmatter, -initfrontmatter, and -setshare are mutually exclusive")
 	}
 	if opts.setShare && opts.share == "" {
 		return options{}, errors.New("-setshare requires -share=true or -share=false")
@@ -483,6 +493,48 @@ func documentsWithDuplicateID(dups []string, docs []markdownindexer.Document) []
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out
+}
+
+// repairBrokenFrontMatter quotes plain YAML scalars that contain a colon
+// followed by a space, the usual reason a vault's front matter fails to parse.
+// It walks the files directly, lists what it would change, asks for
+// confirmation, and then rewrites. Files it cannot repair are reported and
+// left untouched; Scan still sees them afterwards.
+func repairBrokenFrontMatter(opts options, stdin io.Reader, stderr io.Writer) error {
+	planned, err := markdowntools.RepairFrontMatter(opts.dir, markdowntools.RepairOptions{Pattern: opts.pattern})
+	if err != nil {
+		return err
+	}
+	for _, p := range planned.Unrepairable {
+		fmt.Fprintf(stderr, "could not repair %s: %v\n", p.Path, p.Err)
+	}
+	if len(planned.Fixes) == 0 {
+		if len(planned.Unrepairable) == 0 {
+			fmt.Fprintln(stderr, "no unquoted colon-space scalars found; nothing to fix")
+		}
+		return nil
+	}
+
+	fmt.Fprintf(stderr, "The following %d document(s) have unquoted colon-space scalars. Each one will be quoted in place:\n", len(planned.Fixes))
+	for _, f := range planned.Fixes {
+		fmt.Fprintf(stderr, "  %s (%s)\n", f.Path, strings.Join(f.Fields, ", "))
+	}
+	ok, err := promptConfirm(stderr, stdin)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("aborted by user; no files were modified")
+	}
+
+	applied, err := markdowntools.RepairFrontMatter(opts.dir, markdowntools.RepairOptions{Pattern: opts.pattern, Apply: true})
+	if err != nil {
+		return err
+	}
+	for _, f := range applied.Fixes {
+		fmt.Fprintf(stderr, "quoted front matter: %s (%s)\n", f.Path, strings.Join(f.Fields, ", "))
+	}
+	return nil
 }
 
 // stripDuplicateFrontMatter lists every document sharing a duplicate UUID,

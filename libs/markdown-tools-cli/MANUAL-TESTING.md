@@ -127,6 +127,23 @@ echo y | ./markdown-tools-cli -dir /tmp/strip-scratch -stripdups -force
 The duplicate is gone, but the command still exits 1: `broken-frontmatter.md` is
 still broken. Check that the duplicate line specifically has disappeared.
 
+#### Quoting broken front matter
+
+`-fix-frontmatter` quotes plain scalars that contain `: `, which is the usual
+reason YAML rejects a title. It prompts like `-fix-duplicates`. The fixture's
+`broken-frontmatter.md` is an unclosed `[` and cannot be quoted; use a scratch
+file with a colon-space title instead.
+
+``` bash
+mkdir -p /tmp/quote-scratch
+printf '%s\n' '---' 'title: Telegraf: metrics collector' 'share: true' '---' '' 'Body.' > /tmp/quote-scratch/telegraf.md
+echo y | ./markdown-tools-cli -dir /tmp/quote-scratch -fix-frontmatter
+./markdown-tools-cli -dir /tmp/quote-scratch -validate
+```
+
+Expect `title: "Telegraf: metrics collector"` on disk and `vault check: ok`.
+A second run should print `nothing to fix` and leave the bytes alone.
+
 #### Writing front matter
 
 Both write modes modify files in place, so use a scratch copy. `-initfrontmatter`

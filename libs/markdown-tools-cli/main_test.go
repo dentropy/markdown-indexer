@@ -253,6 +253,8 @@ func TestWriteFlagValidation(t *testing.T) {
 		{"-dir", ".", "-setshare"},
 		{"-dir", ".", "-initfrontmatter", "-setshare", "-share=true"},
 		{"-dir", ".", "-fix-duplicates", "-initfrontmatter"},
+		{"-dir", ".", "-fix-frontmatter", "-initfrontmatter"},
+		{"-dir", ".", "-fix-frontmatter", "-fix-duplicates"},
 		{"-dir", ".", "-share=true"},
 		{"-dir", ".", "-initfrontmatter", "-share=maybe"},
 	}
@@ -420,6 +422,106 @@ func TestStripDuplicateFrontMatterAborts(t *testing.T) {
 		if string(data) != content {
 			t.Errorf("%s must be unchanged after abort: %q", name, data)
 		}
+	}
+}
+
+func TestFixFrontMatter(t *testing.T) {
+	dir := t.TempDir()
+	broken := "---\ntitle: Telegraf: metrics collector\nuuid: keep-me\nshare: true\n---\n\nBody: untouched.\n"
+	writeTestMD(t, dir, "telegraf.md", broken)
+	writeTestMD(t, dir, "fine.md", "---\ntitle: Fine\nuuid: other\nshare: true\n---\n\nOk.\n")
+	writeTestMD(t, dir, "unrepairable.md", "---\ntitle: [unclosed\n---\n\nBody.\n")
+
+	var stdout, stderr strings.Builder
+	err := runWith([]string{"-dir", dir, "-fix-frontmatter", "-include-unshared"}, &stdout, &stderr, strings.NewReader("y\n"))
+	if err == nil {
+		t.Fatal("want error: unrepairable.md still fails the scan after quoting")
+	}
+	if !strings.Contains(err.Error(), "unrepairable.md") {
+		t.Errorf("error should name the unrepairable file, got: %s", err)
+	}
+	if !strings.Contains(stderr.String(), "telegraf.md (title)") {
+		t.Errorf("stderr should list the file and field before the prompt: %s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "could not repair unrepairable.md") {
+		t.Errorf("stderr should report the unrepairable file: %s", stderr.String())
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "telegraf.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `title: "Telegraf: metrics collector"`) {
+		t.Errorf("telegraf.md should be quoted: %s", data)
+	}
+	if !strings.Contains(string(data), "uuid: keep-me") || !strings.Contains(string(data), "Body: untouched.") {
+		t.Errorf("telegraf.md lost identity or body: %s", data)
+	}
+
+	unrepairable, err := os.ReadFile(filepath.Join(dir, "unrepairable.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(unrepairable), "title: [unclosed") {
+		t.Errorf("unrepairable.md must be left untouched: %s", unrepairable)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	err = runWith([]string{"-dir", dir, "-force", "-include-unshared"}, &stdout, &stderr, strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("index after repair: %v\nstderr: %s", err, stderr.String())
+	}
+	var docs map[string]markdownindexer.Document
+	if json.Unmarshal([]byte(stdout.String()), &docs) != nil {
+		t.Fatalf("stdout should be a valid index: %s", stdout.String())
+	}
+	doc, ok := docs["keep-me"]
+	if !ok {
+		t.Fatalf("quoted document should be keyed by its uuid: %s", stdout.String())
+	}
+	if doc.DisplayName() != "Telegraf: metrics collector" {
+		t.Errorf("title = %q, want Telegraf: metrics collector", doc.DisplayName())
+	}
+}
+
+func TestFixFrontMatterAborts(t *testing.T) {
+	dir := t.TempDir()
+	broken := "---\ntitle: A: B\nshare: true\n---\n\nBody.\n"
+	writeTestMD(t, dir, "note.md", broken)
+
+	var stdout, stderr strings.Builder
+	err := runWith([]string{"-dir", dir, "-fix-frontmatter"}, &stdout, &stderr, strings.NewReader("n\n"))
+	if err == nil {
+		t.Fatal("want error when the user declines")
+	}
+	if !strings.Contains(err.Error(), "aborted") {
+		t.Errorf("error should mention the abort, got: %s", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "note.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != broken {
+		t.Errorf("note.md must be unchanged after abort: %q", data)
+	}
+}
+
+func TestFixFrontMatterNothingToFix(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "fine.md", "---\ntitle: Fine\nuuid: abc\nshare: true\n---\n\nBody.\n")
+
+	var stdout, stderr strings.Builder
+	err := runWith([]string{"-dir", dir, "-fix-frontmatter"}, &stdout, &stderr, strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "nothing to fix") {
+		t.Errorf("stderr should say nothing needed quoting: %s", stderr.String())
+	}
+	var docs map[string]markdownindexer.Document
+	if json.Unmarshal([]byte(stdout.String()), &docs) != nil || docs["abc"].RelativePath != "fine.md" {
+		t.Errorf("stdout should still be the index: %s", stdout.String())
 	}
 }
 
