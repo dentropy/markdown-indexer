@@ -12,7 +12,7 @@ the tools only write, and the CLI is a thin shell over both.
 | Module                                                    | Package          | What it is                                                          |
 | --------------------------------------------------------- | ---------------- | ------------------------------------------------------------------- |
 | [`libs/markdown-indexer`](libs/markdown-indexer)           | `markdownindexer` | The indexing. Read-only, with no CLI, no database, no watcher.      |
-| [`libs/markdown-tools`](libs/markdown-tools)               | `markdowntools`   | Writes: front matter (init, share, duplicate repair) and backlinks files. |
+| [`libs/markdown-tools`](libs/markdown-tools)               | `markdowntools`   | Writes: front matter (init, share, quoting repair, duplicate UUIDs) and backlinks files. |
 | [`libs/markdown-tools-cli`](libs/markdown-tools-cli)       | `main`            | A command line tool over both libraries. Prints JSON, writes, publishes, checks. |
 
 The indexer is the substance; the tools import its index and write back to the

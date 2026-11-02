@@ -32,6 +32,13 @@ func ReplaceDuplicateUUIDs(ix *markdownindexer.Index, dir, idKey string) ([]stri
 func WriteBacklinks(backlinks map[string]markdownindexer.Backlinks, dir string, opts BacklinksOptions) (written, removed []string, err error)
 ```
 
+A file whose front matter does not parse never reaches an index, so quoting
+repair walks the vault directly:
+
+```go
+func RepairFrontMatter(dir string, opts RepairOptions) (RepairResult, error)
+```
+
 Each returns the relative paths of the files it actually rewrote. Nothing here
 prints, prompts, or reads from stdin.
 
@@ -76,8 +83,23 @@ changed, err := markdowntools.ReplaceDuplicateUUIDs(idx, "./notes", "uuid")
 ```
 
 Every document sharing a UUID gets a fresh one. Unique UUIDs are untouched.
-This is the write behind the CLI's `-stripdups` flag; the CLI owns the
+This is the write behind the CLI's `-fix-duplicates` flag; the CLI owns the
 confirmation prompt.
+
+### Quote broken YAML scalars
+
+```go
+result, err := markdowntools.RepairFrontMatter("./notes", markdowntools.RepairOptions{Apply: true})
+```
+
+Plain scalars that contain a colon followed by a space (`title: Telegraf: metrics collector`)
+are wrapped in double quotes. Already-quoted values, block scalars, comments, and
+file bodies are left alone. A file is only rewritten when the whole front matter
+block parses afterwards; anything still broken is returned in `Unrepairable` and
+left byte-for-byte untouched. With `Apply` false the same result is reported
+without writing, which is how the CLI builds its confirmation prompt.
+
+This is the write behind the CLI's `-fix-frontmatter` flag.
 
 ### Publish backlinks
 
@@ -121,7 +143,9 @@ preserved. Unterminated front matter is an error rather than a silent no-op.
 This package never scans or indexes on its own. That keeps one source of truth
 for what a vault contains (`markdownindexer.Scan`) and one place where writing
 happens (here). Backlinks are computed by `markdownindexer` and handed over as a
-map; this package only turns them into files. The CLI composes all of it.
+map; this package only turns them into files. `RepairFrontMatter` is the one
+writer that walks files itself, because a document whose YAML does not parse
+never reaches an index. The CLI composes all of it.
 
 ## Test
 

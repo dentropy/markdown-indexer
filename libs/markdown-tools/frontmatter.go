@@ -26,24 +26,10 @@ func SetFrontMatterValue(data []byte, key, value string) ([]byte, error) {
 		return out.Bytes(), nil
 	}
 
-	body := data[len(frontMatterDelimiter):]
-	yamlStart := len(frontMatterDelimiter)
-	trimmed := bytes.TrimLeft(body, " \t")
-	yamlStart += len(body) - len(trimmed)
-	if len(trimmed) > 0 && (trimmed[0] == '\n' || trimmed[0] == '\r') {
-		n := 1
-		if trimmed[0] == '\r' && len(trimmed) > 1 && trimmed[1] == '\n' {
-			n = 2
-		}
-		yamlStart += n
-		trimmed = trimmed[n:]
+	yamlStart, yamlEnd, _, err := frontMatterBounds(data)
+	if err != nil {
+		return nil, err
 	}
-
-	end := findClosingDelimiter(trimmed)
-	if end < 0 {
-		return nil, errors.New("unterminated front matter: missing closing ---")
-	}
-	yamlEnd := yamlStart + end
 
 	// The YAML block ends with the closing --- delimiter, so every line before
 	// the last one is front-matter content.
@@ -82,6 +68,35 @@ func SetFrontMatterValue(data []byte, key, value string) ([]byte, error) {
 	out.Write(block.Bytes())
 	out.Write(data[yamlEnd:])
 	return out.Bytes(), nil
+}
+
+// frontMatterBounds returns the byte range of the YAML block in data: start is
+// the offset just past the opening --- line, and end is the offset just past
+// the closing --- line. It reports ok=false when data has no front matter and
+// an error when the block is opened but never closed.
+func frontMatterBounds(data []byte) (start, end int, ok bool, err error) {
+	if !hasFrontMatter(data) {
+		return 0, 0, false, nil
+	}
+
+	body := data[len(frontMatterDelimiter):]
+	start = len(frontMatterDelimiter)
+	trimmed := bytes.TrimLeft(body, " \t")
+	start += len(body) - len(trimmed)
+	if len(trimmed) > 0 && (trimmed[0] == '\n' || trimmed[0] == '\r') {
+		n := 1
+		if trimmed[0] == '\r' && len(trimmed) > 1 && trimmed[1] == '\n' {
+			n = 2
+		}
+		start += n
+		trimmed = trimmed[n:]
+	}
+
+	end = start + findClosingDelimiter(trimmed)
+	if end < start {
+		return 0, 0, false, errors.New("unterminated front matter: missing closing ---")
+	}
+	return start, end, true, nil
 }
 
 // hasFrontMatter reports whether the file content opens with a --- delimiter
