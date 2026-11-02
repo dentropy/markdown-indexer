@@ -1,7 +1,8 @@
 # markdown-indexer
 
 Indexes a markdown vault into content-addressed documents and a wikilink edge
-graph, rewrites front matter, and provides a command line tool over both.
+graph, derives each document's backlinks, rewrites front matter, and provides a
+command line tool over all of it.
 
 The work is split into three Go modules under `libs/`: the indexer only reads,
 the tools only write, and the CLI is a thin shell over both.
@@ -11,8 +12,8 @@ the tools only write, and the CLI is a thin shell over both.
 | Module                                                    | Package          | What it is                                                          |
 | --------------------------------------------------------- | ---------------- | ------------------------------------------------------------------- |
 | [`libs/markdown-indexer`](libs/markdown-indexer)           | `markdownindexer` | The indexing. Read-only, with no CLI, no database, no watcher.      |
-| [`libs/markdown-tools`](libs/markdown-tools)               | `markdowntools`   | Front matter writes: init, share permission, duplicate UUID repair. |
-| [`libs/markdown-tools-cli`](libs/markdown-tools-cli)       | `main`            | A command line tool over both libraries. Prints JSON, writes, checks. |
+| [`libs/markdown-tools`](libs/markdown-tools)               | `markdowntools`   | Writes: front matter (init, share, duplicate repair) and backlinks files. |
+| [`libs/markdown-tools-cli`](libs/markdown-tools-cli)       | `main`            | A command line tool over both libraries. Prints JSON, writes, publishes, checks. |
 
 The indexer is the substance; the tools import its index and write back to the
 vault; the CLI adds flags, prompts, and output but no indexing or writing logic
@@ -53,6 +54,28 @@ if err != nil {
 	return err
 }
 changed, err := markdowntools.InitFrontMatter(idx, "./notes", "uuid", nil)
+```
+
+## Publish backlinks
+
+Backlinks are the resolved body wikilinks arriving at a document. The indexer
+derives them; the tools publish one file per document, matching
+[`backlinks.schema.json`](libs/markdown-indexer/docs/backlinks.schema.json).
+
+```go
+backlinks := idx.Backlinks()
+written, removed, err := markdowntools.WriteBacklinks(
+	backlinks,
+	"./site/backlinks",
+	markdowntools.BacklinksOptions{Prune: true},
+)
+```
+
+From the CLI:
+
+```sh
+markdown-tools-cli -dir ./notes -backlinks            # JSON on stdout
+markdown-tools-cli -dir ./notes -backlinks-dir site/backlinks  # one file per document
 ```
 
 ## A note on the names

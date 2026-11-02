@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -30,6 +31,10 @@ type options struct {
 	share           string
 	memUsage        bool
 	wikilinks       bool
+	backlinks       bool
+	backlinksDir    string
+	id              string
+	prune           bool
 	force           bool
 	vaultCheck      bool
 	quiet           bool
@@ -139,12 +144,30 @@ func runWith(args []string, stdout, stderr io.Writer, stdin io.Reader) error {
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 
-	if opts.wikilinks {
+	switch {
+	case opts.backlinks && opts.backlinksDir != "":
+		if err := publishBacklinks(docs, opts, notices); err != nil {
+			return err
+		}
+	case opts.backlinks && opts.id != "":
+		backlinks := markdownindexer.BuildBacklinks(docs)
+		entry, ok := backlinks[opts.id]
+		if !ok {
+			return fmt.Errorf("unknown document id: %s", opts.id)
+		}
+		if err := enc.Encode(entry); err != nil {
+			return fmt.Errorf("encode backlinks: %w", err)
+		}
+	case opts.backlinks:
+		if err := enc.Encode(markdownindexer.BuildBacklinks(docs)); err != nil {
+			return fmt.Errorf("encode backlinks: %w", err)
+		}
+	case opts.wikilinks:
 		graph := buildWikilinkGraph(docs)
 		if err := enc.Encode(graph); err != nil {
 			return fmt.Errorf("encode wikilink graph: %w", err)
 		}
-	} else {
+	default:
 		if opts.force {
 			docs = filterMarshalable(docs, func(d markdownindexer.Document) string {
 				return d.RelativePath
@@ -262,6 +285,10 @@ func parseFlags(args []string) (options, error) {
 	fs.StringVar(&opts.share, "share", "", "share value for -initfrontmatter and -setshare (true or false)")
 	fs.BoolVar(&opts.memUsage, "memusage", false, "print an estimate of the memory used by the documents struct")
 	fs.BoolVar(&opts.wikilinks, "wikilinks", false, "output a JSON graph of wikilinks instead of the document index")
+	fs.BoolVar(&opts.backlinks, "backlinks", false, "output each document's incoming links instead of the document index")
+	fs.StringVar(&opts.backlinksDir, "backlinks-dir", "", "write one backlinks JSON file per document into this directory (implies -backlinks)")
+	fs.StringVar(&opts.id, "id", "", "with -backlinks, output only this document's backlinks file")
+	fs.BoolVar(&opts.prune, "prune", true, "with -backlinks-dir, remove *.json files for documents no longer published")
 	fs.BoolVar(&opts.force, "force", false, "skip documents with broken front matter and index the rest instead of aborting")
 	fs.BoolVar(&opts.force, "F", false, "shorthand for -force")
 	fs.BoolVar(&opts.quiet, "quiet", false, "print only the JSON, suppressing progress notices on stderr")
@@ -278,6 +305,21 @@ func parseFlags(args []string) (options, error) {
 	}
 	if opts.pattern == "" {
 		return options{}, errors.New("pattern must not be empty")
+	}
+	if opts.backlinksDir != "" {
+		opts.backlinks = true
+	}
+	if opts.wikilinks && opts.backlinks {
+		return options{}, errors.New("-wikilinks and -backlinks are mutually exclusive")
+	}
+	if opts.backlinksDir != "" && opts.out != "" {
+		return options{}, errors.New("-backlinks-dir cannot be combined with -out")
+	}
+	if opts.id != "" && !opts.backlinks {
+		return options{}, errors.New("-id only applies with -backlinks")
+	}
+	if opts.id != "" && opts.backlinksDir != "" {
+		return options{}, errors.New("-id cannot be combined with -backlinks-dir")
 	}
 	writeModes := 0
 	for _, on := range []bool{opts.stripDup, opts.initFrontMatter, opts.setShare} {
@@ -484,4 +526,25 @@ func promptConfirm(stderr io.Writer, stdin io.Reader) (bool, error) {
 // graph as a map keyed by each edge's content address.
 func buildWikilinkGraph(docs []markdownindexer.Document) map[string]markdownindexer.Edge {
 	return markdownindexer.BuildEdges(docs)
+}
+
+// publishBacklinks writes one backlinks file per document through
+// markdowntools and reports what changed. -quiet silences the notices.
+func publishBacklinks(docs []markdownindexer.Document, opts options, notices io.Writer) error {
+	written, removed, err := markdowntools.WriteBacklinks(
+		markdownindexer.BuildBacklinks(docs),
+		opts.backlinksDir,
+		markdowntools.BacklinksOptions{Prune: opts.prune},
+	)
+	if err != nil {
+		return err
+	}
+	for _, name := range written {
+		fmt.Fprintf(notices, "wrote backlinks: %s\n", filepath.Join(opts.backlinksDir, name))
+	}
+	for _, name := range removed {
+		fmt.Fprintf(notices, "removed stale: %s\n", filepath.Join(opts.backlinksDir, name))
+	}
+	fmt.Fprintf(notices, "%d backlink file(s) written, %d removed\n", len(written), len(removed))
+	return nil
 }

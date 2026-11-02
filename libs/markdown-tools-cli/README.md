@@ -1,7 +1,8 @@
 # markdown-tools-cli
 
 A command line tool over a markdown vault: it indexes the vault into documents
-and a wikilink graph, prints them as JSON, and applies front matter fixes.
+and a wikilink graph, prints them as JSON, publishes each document's backlinks,
+and applies front matter fixes.
 
 The indexing is not part of this module. It lives in the sibling
 [`libs/markdown-indexer`](../markdown-indexer), whose package is named
@@ -28,12 +29,14 @@ Requires Go 1.27.
 ```
 
 The default operation writes the document index as JSON. `-wikilinks` writes the
-wikilink graph instead, and `-validate` reports structural problems and exits
-non-zero. Every operation is a one-shot scan; there is no daemon and no database.
+wikilink graph instead, `-backlinks` writes each document's incoming links, and
+`-validate` reports structural problems and exits non-zero. Every operation is a
+one-shot scan; there is no daemon and no database.
 
 ```sh
 ./markdown-tools-cli -dir examples -include-unshared              # document JSON list
 ./markdown-tools-cli -dir examples -wikilinks        # wikilink graph JSON
+./markdown-tools-cli -dir examples -backlinks        # incoming links JSON
 ./markdown-tools-cli -dir testdata/vault -validate # structural problems
 ```
 
@@ -59,6 +62,9 @@ export VAULT_DIR=`~/Vault`
 # Get the backlinks
 ./markdown-tools-cli -dir $VAULT_DIR -backlinks
 
+# Publish one backlinks file per document
+./markdown-tools-cli -dir $VAULT_DIR -backlinks-dir site/backlinks
+
 ```
 
 | Flag         | Default    | Description                                                    |
@@ -69,6 +75,10 @@ export VAULT_DIR=`~/Vault`
 | `-idkey`     | `uuid`     | YAML front matter key holding the document UUID                |
 | `-include-unshared`       | `false`    | Load every document; by default only `share: true` documents   |
 | `-wikilinks` | `false`    | Output the wikilink graph instead of the document index        |
+| `-backlinks` | `false`    | Output each document's incoming links instead of the index     |
+| `-backlinks-dir` | *(unset)* | Write one backlinks file per document; implies `-backlinks`  |
+| `-id`        | *(unset)*  | With `-backlinks`, print only that document's file             |
+| `-prune`     | `true`     | With `-backlinks-dir`, delete stale `*.json` files             |
 | `-validate`| `false`    | Report broken front matter and duplicate/missing UUIDs          |
 | `-check-duplicates` | `false`    | Report documents sharing a UUID, after writing the index       |
 | `-fix-duplicates` | `false`    | Assign a fresh UUID to every document sharing one (prompts)    |
@@ -100,6 +110,62 @@ The structural commands mostly ignore the lens: `-validate` and `-fix-duplicates
 operate on the whole vault, so CI still sees problems in documents that are not
 shared. `-check-duplicates` is the exception: it reports on what was indexed, so it
 needs `-include-unshared` to see unshared documents.
+
+## Backlinks
+
+`-backlinks` outputs each document's incoming links. They are derived from the
+wikilink graph: every resolved body `INTERNAL` edge whose target is a loaded
+document. A `[[link]]` in front matter is a `FRONTMATTER_INTERNAL` edge and is
+not a backlink; neither are unresolved targets, website links, tags, embeds, or
+self-links.
+
+```json
+{
+  "123e4567-e89b-12d3-a456-426614174000": {
+    "document_id": "123e4567-e89b-12d3-a456-426614174000",
+    "backlinks": [
+      {
+        "from_document_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "from_name": "First Post",
+        "from_relative_path": "a/b/post.md",
+        "title": "the note",
+        "label": "INTERNAL"
+      }
+    ]
+  }
+}
+```
+
+The object is keyed by the target's UUID. Every loaded document has an entry,
+with an empty array when nothing links to it. `from_name` is the source's front
+matter title, else its file name; entries sort by source name, then link title,
+then source UUID.
+
+`-id` prints a single document's file, the shape described by
+[`backlinks.schema.json`](../markdown-indexer/docs/backlinks.schema.json):
+
+```sh
+./markdown-tools-cli -dir testdata/vault -F -q -backlinks -id <uuid>
+```
+
+`-backlinks-dir` writes one file per document, `site/backlinks/<uuid>.json`,
+instead of printing:
+
+```sh
+./markdown-tools-cli -dir testdata/vault -F -q -backlinks-dir site/backlinks
+```
+
+Each file is written atomically and only when its bytes change, so a repeat run
+is cheap. `-prune` (on by default) removes regular `*.json` files in that
+directory that no longer belong to a loaded document; point it at a dedicated
+folder, because anything else there is treated as stale. Pass `-prune=false` to
+keep old files. An ID that cannot be a single file name (a path separator,
+`..`, a control character) aborts the run: document IDs come from front matter
+and must not steer the writer outside the directory.
+
+Both ends of a backlink come from the loaded document set, so the default share
+filter never leaks an unshared document's title or path. `-include-unshared`
+widens sources and targets together.
 
 ## Writing front matter
 
@@ -396,6 +462,20 @@ markdown-tools-cli -dir testdata/vault -F -q -include-unshared -wikilinks > edge
 markdown-tools-cli -dir testdata/vault -F -q -include-unshared | jq -r --slurpfile g edges.json '.[] | .key as $me | select([$g[0][] | select(.from_document_id == $me)] | length == 0) | .value.relativePath'
 ```
 
+### Publishing backlinks
+
+```sh
+# Incoming links per document, keyed by target UUID.
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared -backlinks | jq -r 'to_entries[] | "\(.value.document_id)  \(.value.backlinks | length)"'
+
+# One document's file, ready to serve.
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared -backlinks -id <uuid>
+
+# The whole tree, one file per document.
+markdown-tools-cli -dir testdata/vault -F -q -include-unshared -backlinks-dir site/backlinks
+find site/backlinks -name '*.json' | wc -l
+```
+
 ### Finding duplicates
 
 `-check-duplicates` reports them after writing the index, and exits non-zero, so it
@@ -507,7 +587,7 @@ Manual verification steps are in [MANUAL-TESTING.md](MANUAL-TESTING.md).
 ## Layout
 
 ```
-main.go              flags, orchestration, prompts, share filtering, JSON encoding
+main.go              flags, orchestration, prompts, share filtering, backlinks, JSON encoding
 main_test.go         the tests
 examples/            four small files, including a deliberate duplicate UUID
 testdata/            a realistic vault, used by the tests and most examples

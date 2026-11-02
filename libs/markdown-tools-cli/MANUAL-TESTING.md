@@ -39,6 +39,32 @@ deliberately broken file, and without `-force` it aborts the run.
 Edges are keyed by content address, so identical `[[links]]` collapse to one
 entry. Unresolved targets keep their raw text as `to_document_id`.
 
+#### Backlinks
+
+Backlinks are derived from the graph, so every loaded document gets an entry,
+empty when nothing links to it. Run with `-include-unshared` so the fixture's
+shared documents are not the only sources.
+
+``` bash
+# Incoming links keyed by target UUID.
+./markdown-tools-cli -dir testdata -force -backlinks -include-unshared | jq -r 'to_entries[] | "\(.value.document_id)\t\(.value.backlinks | length)"'
+
+# One document's published file.
+./markdown-tools-cli -dir testdata -force -backlinks -include-unshared -id <uuid>
+
+# Publish a tree, then repeat to confirm nothing changes.
+./markdown-tools-cli -dir testdata -force -backlinks -include-unshared -backlinks-dir /tmp/backlinks
+./markdown-tools-cli -dir testdata -force -backlinks -include-unshared -backlinks-dir /tmp/backlinks
+find /tmp/backlinks -name '*.json' | wc -l
+```
+
+An unlinked document's file must contain `"backlinks": []`, and a front matter
+`[[link]]` must not appear: only body links are backlinks.
+
+``` bash
+jq 'select(.backlinks == [])' /tmp/backlinks/*.json
+```
+
 #### Vault check
 
 Reports structural problems and exits non-zero, which is what makes it usable as

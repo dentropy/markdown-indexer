@@ -782,3 +782,192 @@ func TestRunWithShareWikilinks(t *testing.T) {
 		t.Errorf("-all should include every edge, got %d", len(graph))
 	}
 }
+
+func backlinksVault(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeTestMD(t, dir, "alpha.md", "---\nuuid: aaa\ntitle: Alpha\nshare: true\n---\n\nSee [[beta|the beta note]].\n")
+	writeTestMD(t, dir, "beta.md", "---\nuuid: bbb\nshare: true\n---\n\nBeta.\n")
+	writeTestMD(t, dir, "empty.md", "---\nuuid: ccc\nshare: true\n---\n\nNothing links here.\n")
+	writeTestMD(t, dir, "private.md", "---\nuuid: ddd\nshare: false\n---\n\nPrivate [[beta]].\n")
+	return dir
+}
+
+func TestBacklinks(t *testing.T) {
+	dir := backlinksVault(t)
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-backlinks"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+	}
+
+	var got map[string]markdownindexer.Backlinks
+	if err := json.Unmarshal([]byte(stdout.String()), &got); err != nil {
+		t.Fatalf("stdout is not backlinks JSON: %v\n%s", err, stdout.String())
+	}
+	if len(got) != 3 {
+		t.Errorf("want entries for the three shared documents, got %d: %s", len(got), stdout.String())
+	}
+	beta := got["bbb"].Backlinks
+	if len(beta) != 1 {
+		t.Fatalf("beta backlinks = %+v, want one", beta)
+	}
+	if beta[0].FromName != "Alpha" || beta[0].Title != "the beta note" ||
+		beta[0].FromRelativePath != "alpha.md" || beta[0].Label != "INTERNAL" {
+		t.Errorf("unexpected backlink: %+v", beta[0])
+	}
+	if got["ccc"].Backlinks == nil || len(got["ccc"].Backlinks) != 0 {
+		t.Errorf("an unlinked document needs an empty array, got %+v", got["ccc"])
+	}
+	if strings.Contains(stdout.String(), `"ddd"`) {
+		t.Errorf("an unshared document must not leak: %s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "null") {
+		t.Errorf("backlinks must never encode as null: %s", stdout.String())
+	}
+}
+
+func TestBacklinksSingleID(t *testing.T) {
+	dir := backlinksVault(t)
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-backlinks", "-id", "bbb"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got markdownindexer.Backlinks
+	if err := json.Unmarshal([]byte(stdout.String()), &got); err != nil {
+		t.Fatalf("stdout is not one backlinks file: %v\n%s", err, stdout.String())
+	}
+	if got.DocumentID != "bbb" || len(got.Backlinks) != 1 {
+		t.Errorf("got %+v, want beta's file", got)
+	}
+
+	stdout.Reset()
+	err := runWith([]string{"-dir", dir, "-backlinks", "-id", "nope"}, &stdout, &stderr, strings.NewReader(""))
+	if err == nil || !strings.Contains(err.Error(), "unknown document id") {
+		t.Fatalf("want an unknown id error, got %v", err)
+	}
+}
+
+func TestBacklinksDir(t *testing.T) {
+	dir := backlinksVault(t)
+	out := filepath.Join(t.TempDir(), "site", "backlinks")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "stale.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-backlinks-dir", out}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v\nstderr: %s", err, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("directory mode should not write JSON to stdout: %s", stdout.String())
+	}
+	for _, name := range []string{"aaa.json", "bbb.json", "ccc.json"} {
+		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
+			t.Errorf("%s should be written: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(out, "stale.json")); !os.IsNotExist(err) {
+		t.Errorf("stale.json should be pruned, stat err = %v", err)
+	}
+	if !strings.Contains(stderr.String(), "3 backlink file(s) written, 1 removed") {
+		t.Errorf("stderr should report the counts: %s", stderr.String())
+	}
+
+	var beta markdownindexer.Backlinks
+	data, err := os.ReadFile(filepath.Join(out, "bbb.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &beta); err != nil {
+		t.Fatal(err)
+	}
+	if beta.DocumentID != "bbb" || len(beta.Backlinks) != 1 {
+		t.Errorf("bbb.json = %+v", beta)
+	}
+
+	// A repeat run writes nothing and removes nothing.
+	stdout.Reset()
+	stderr.Reset()
+	if err := runWith([]string{"-dir", dir, "-backlinks-dir", out}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr.String(), "0 backlink file(s) written, 0 removed") {
+		t.Errorf("a repeat run should be a no-op: %s", stderr.String())
+	}
+}
+
+func TestBacklinksDirKeepStale(t *testing.T) {
+	dir := backlinksVault(t)
+	out := t.TempDir()
+	if err := os.WriteFile(filepath.Join(out, "stale.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-backlinks-dir", out, "-prune=false"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "stale.json")); err != nil {
+		t.Errorf("-prune=false should keep stale files: %v", err)
+	}
+}
+
+func TestBacklinksDirQuiet(t *testing.T) {
+	dir := backlinksVault(t)
+	out := filepath.Join(t.TempDir(), "backlinks")
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-backlinks-dir", out, "-q"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatal(err)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("-q should silence notices, got: %s", stderr.String())
+	}
+}
+
+func TestBacklinksIncludeUnshared(t *testing.T) {
+	dir := backlinksVault(t)
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-backlinks", "-include-unshared"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]markdownindexer.Backlinks
+	if err := json.Unmarshal([]byte(stdout.String()), &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["ddd"]; !ok {
+		t.Errorf("an unshared document needs an entry under -include-unshared: %s", stdout.String())
+	}
+	if n := len(got["bbb"].Backlinks); n != 2 {
+		t.Errorf("beta should be linked from both alpha and private, got %d: %+v", n, got["bbb"].Backlinks)
+	}
+	for _, b := range got["bbb"].Backlinks {
+		if b.FromName == "Alpha" || b.FromName == "private" {
+			continue
+		}
+		t.Errorf("unexpected source: %+v", b)
+	}
+}
+
+func TestBacklinksFlagValidation(t *testing.T) {
+	dir := backlinksVault(t)
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"wikilinks and backlinks", []string{"-dir", dir, "-wikilinks", "-backlinks"}},
+		{"out and dir", []string{"-dir", dir, "-backlinks-dir", "x", "-out", "y"}},
+		{"id without backlinks", []string{"-dir", dir, "-id", "aaa"}},
+		{"id with dir", []string{"-dir", dir, "-id", "aaa", "-backlinks-dir", t.TempDir()}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var stdout, stderr strings.Builder
+			if err := runWith(c.args, &stdout, &stderr, strings.NewReader("")); err == nil {
+				t.Fatalf("want an error for %v", c.args)
+			}
+		})
+	}
+}
