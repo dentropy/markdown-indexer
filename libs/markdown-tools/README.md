@@ -93,8 +93,10 @@ result, err := markdowntools.RepairFrontMatter("./notes", markdowntools.RepairOp
 ```
 
 Plain scalars that contain a colon followed by a space (`title: Telegraf: metrics collector`)
-are wrapped in double quotes. Already-quoted values, block scalars, comments, and
-file bodies are left alone. A file is only rewritten when the whole front matter
+are wrapped in double quotes. An unbalanced quote in a single-line flow sequence
+(`tags: [ 'parallelization', 'gnu_linux ]`) gets its closer inserted before the
+closing `]`. Already-quoted values, block scalars, comments, and file bodies are
+left alone. A file is only rewritten when the whole front matter
 block parses afterwards; anything still broken is returned in `Unrepairable` and
 left byte-for-byte untouched. With `Apply` false the same result is reported
 without writing, which is how the CLI builds its confirmation prompt.
