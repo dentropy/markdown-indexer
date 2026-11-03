@@ -30,9 +30,33 @@ Requires Go 1.27.
 
 The default operation writes the document index as JSON. `-wikilinks` writes the
 wikilink graph instead, `-backlinks` writes each document's incoming links,
-`-manifest` writes the vault's title/UUID/path directory, and `-validate` reports
-structural problems and exits non-zero. Every operation is a one-shot scan;
-there is no daemon and no database.
+`-assets` writes the hashed non-markdown files, `-manifest` writes the vault's
+title/UUID/path directory, `-site-dir` publishes the static JSON tree, and
+`-validate` reports structural problems and exits non-zero. Every operation is a
+one-shot scan; there is no daemon and no database.
+
+``` bash
+export VAULT_DIR=examples
+./markdown-tools-cli -dir $VAULT_DIR
+
+./markdown-tools-cli -dir $VAULT_DIR -initfrontmatter -force
+./markdown-tools-cli -dir $VAULT_DIR -validate
+
+./markdown-tools-cli -dir $VAULT_DIR -fix-frontmatter
+./markdown-tools-cli -dir $VAULT_DIR -validate
+
+./markdown-tools-cli -dir $VAULT_DIR -fix-duplicates
+./markdown-tools-cli -dir $VAULT_DIR -validate
+
+./markdown-tools-cli -dir $VAULT_DIR -initfrontmatter -force
+./markdown-tools-cli -dir $VAULT_DIR -validate
+
+./markdown-tools-cli -dir $VAULT_DIR -include-unshared
+./markdown-tools-cli -dir $VAULT_DIR -include-unshared -wikilinks
+./markdown-tools-cli -dir $VAULT_DIR -include-unshared -backlinks
+./markdown-tools-cli -dir $VAULT_DIR -include-unshared -manifest
+
+```
 
 ```sh
 ./markdown-tools-cli -dir examples -include-unshared # document JSON list
@@ -40,19 +64,6 @@ there is no daemon and no database.
 ./markdown-tools-cli -dir examples -backlinks        # incoming links JSON
 ./markdown-tools-cli -dir examples -manifest         # title/UUID/path directory JSON
 ./markdown-tools-cli -dir testdata/vault -validate   # structural problems
-```
-
-``` bash
-export VAULT_DIR=examples
-./markdown-tools-cli -dir $VAULT_DIR -fix-frontmatter
-./markdown-tools-cli -dir $VAULT_DIR -initfrontmatter -force
-./markdown-tools-cli -dir $VAULT_DIR -validate
-./markdown-tools-cli -dir $VAULT_DIR -fix-duplicates
-./markdown-tools-cli -dir $VAULT_DIR -validate
-./markdown-tools-cli -dir $VAULT_DIR
-./markdown-tools-cli -dir $VAULT_DIR -include-unshared -wikilinks -force
-./markdown-tools-cli -dir $VAULT_DIR -include-unshared -backlinks -force
-./markdown-tools-cli -dir $VAULT_DIR -include-unshared -manifest -force
 ```
 
 ``` bash
@@ -92,13 +103,15 @@ export VAULT_DIR=`~/Vault`
 | `-wikilinks` | `false`    | Output the wikilink graph instead of the document index        |
 | `-backlinks` | `false`    | Output each document's incoming links instead of the index     |
 | `-backlinks-dir` | *(unset)* | Write one backlinks file per document; implies `-backlinks`  |
+| `-assets`    | `false`    | Output the hashed non-markdown files instead of the index      |
+| `-assets-dir`| *(unset)*  | Write hashed asset files; implies `-assets`                    |
+| `-site-dir`  | *(unset)*  | Publish articles, frontmatter, assets, manifest, and backlinks |
 | `-id`        | *(unset)*  | With `-backlinks`, print only that document's file             |
-| `-prune`     | `true`     | With `-backlinks-dir`, delete stale `*.json` files             |
+| `-prune`     | `true`     | With `-backlinks-dir`, `-assets-dir`, or `-site-dir`, delete stale files |
 | `-manifest`  | `false`    | Output a single JSON file of every processed document's `title`, `uuid`, and `path` |
 | `-validate`| `false`    | Report broken front matter and duplicate/missing UUIDs          |
 | `-check-duplicates` | `false`    | Report documents sharing a UUID, after writing the index       |
 | `-fix-duplicates` | `false`    | Assign a fresh UUID to every document sharing one (prompts)    |
-| `-fix-frontmatter` | `false`  | Quote plain scalars that contain `: ` so the YAML parses (prompts) |
 | `-initfrontmatter` | `false` | Add missing `uuid` and `share` keys; `share` defaults to `false` |
 | `-setshare`  | `false`    | Set `share` on every matched document and add missing UUIDs; requires `-share` |
 | `-share`     | *(unset)*  | `true` or `false`, used by `-initfrontmatter` and `-setshare`  |
@@ -123,10 +136,10 @@ Pass `-include-unshared` to load the whole vault.
 This differs from the library, where `markdownindexer.Options{}.Shared` is **off** by
 default. The CLI opts into the shared filter; the library does not.
 
-The structural commands mostly ignore the lens: `-validate`, `-fix-frontmatter`,
-and `-fix-duplicates` operate on the whole vault, so CI still sees problems in
-documents that are not shared. `-check-duplicates` is the exception: it reports
-on what was indexed, so it needs `-include-unshared` to see unshared documents.
+The structural commands mostly ignore the lens: `-validate` and `-fix-duplicates`
+operate on the whole vault, so CI still sees problems in documents that are not
+shared. `-check-duplicates` is the exception: it reports on what was indexed, so it
+needs `-include-unshared` to see unshared documents.
 
 ## Backlinks
 
@@ -231,10 +244,49 @@ UUIDs appear as separate entries because the manifest describes the files that
 exist; `-check-duplicates` is the flag for that fault. The shape is described by
 [`manifest.schema.json`](../markdown-indexer/docs/manifest.schema.json).
 
+## Assets
+
+`-assets` prints every hashed non-markdown file, keyed by relative path. It
+turns on `HashAssets` in the indexer; a default document scan does not read
+binaries. The hash is a hex sha256 of the file bytes.
+
+```sh
+./markdown-tools-cli -dir testdata/vault -F -q -assets
+./markdown-tools-cli -dir testdata/vault -F -q -assets-dir site/assets
+```
+
+`-assets-dir` writes each file as `site/assets/<sha256>.<ext>`. `-prune`
+applies. `-assets` is mutually exclusive with `-wikilinks`, `-backlinks`,
+`-manifest`, and `-site-dir`. `-backlinks` output is unchanged: no `sha256`
+field. Shape: [`assets.schema.json`](../markdown-indexer/docs/assets.schema.json).
+
+## Static site
+
+`-site-dir` writes the fetchable tree from one scan:
+
+```
+site/
+  manifest.json
+  articles/<uuid>.json
+  frontmatter/<frontmatter_cid>.json
+  assets/<sha256>.<ext>
+  backlinks/<uuid>.json
+```
+
+```sh
+markdown-tools-cli -dir ./notes -site-dir ./site
+```
+
+Article bodies have vault asset links rewritten to `assets/<sha256>.<ext>`.
+Document wikilinks stay. Only assets referenced by published documents are
+copied, so the share filter applies to binaries. The host must send
+`Access-Control-Allow-Origin` if an app on another origin will `fetch` these
+files.
+
 ## Writing front matter
 
-The write flags add or change front matter in place. They walk every markdown
-file `-glob` matches (recursively by default) under `-dir`.
+Two flags add or change front matter in place. Both walk every markdown file the
+scan matches (`-glob`, recursively by default) under `-dir`.
 
 `-initfrontmatter` adds what is missing and leaves existing values alone:
 
@@ -260,18 +312,13 @@ UUIDs and the rest of each file's front matter are preserved:
 `-share` takes `true` or `false` (anything `strconv.ParseBool` accepts). It is
 required with `-setshare`; with `-initfrontmatter` it only decides which value
 missing share keys get. The write modes are mutually exclusive with each other
-and with `-fix-duplicates` and `-fix-frontmatter`.
+and with `-fix-duplicates`.
 
-Writes are immediate: run bulk changes on a copy or from version control.
-`-initfrontmatter` and `-setshare` do not prompt; `-fix-duplicates` and
-`-fix-frontmatter` do. Files whose bytes would not change are not rewritten, so
-repeating a command is safe. After the rewrite the CLI rescans the vault and
-writes JSON as usual.
-
-`-initfrontmatter` and `-setshare` go through the index, so the first file whose
-front matter fails to parse aborts the run unless `-force` is passed, in which
-case it is skipped. `-fix-frontmatter` is the exception: it walks the files as
-raw bytes, so it can reach documents the index cannot load.
+Writes are immediate and unconfirmed: run bulk changes on a copy or from version
+control. Files whose bytes would not change are not rewritten, so repeating a
+command is safe. Broken front matter follows the usual rule: the first bad file
+aborts the run unless `-force` is passed, in which case it is skipped. After the
+rewrite the CLI rescans the vault and writes JSON as usual.
 
 ## Document JSON list
 
@@ -366,16 +413,6 @@ goes further: it lists the colliding documents, asks for confirmation, and assig
 each one a fresh UUID, leaving the rest of every file's front matter untouched.
 Anything but `y`/`yes` aborts without modifying a file.
 
-`-fix-frontmatter` is the quoting repair for the other class of `-validate`
-finding: a plain YAML scalar that contains a colon followed by a space
-(`title: Telegraf: metrics collector`). It lists each file and field it would
-quote, asks for confirmation, and rewrites those values in double quotes,
-leaving comments, bodies, and already-valid files alone. A file it cannot
-repair (unterminated `---`, an unclosed `[`, a `@` indicator, a multi-line
-plain scalar) is reported and left byte-for-byte untouched. Run it before
-`-initfrontmatter` or `-fix-duplicates`; those go through the index and cannot
-see a file whose YAML does not parse.
-
 ## Broken front matter
 
 By default the first file whose front matter fails to parse aborts the run and
@@ -390,15 +427,6 @@ error: vault/broken-frontmatter.md: parse front matter: yaml: line 1: did not fi
 $ ./markdown-tools-cli -dir testdata/vault -force -include-unshared
 
 skipping vault/broken-frontmatter.md: parse front matter: yaml: line 1: did not find expected ',' or ']'
-```
-
-The usual colon-space case is fixable without skipping the file:
-
-```sh
-$ markdown-tools-cli -dir notes -fix-frontmatter
-The following 1 document(s) have unquoted colon-space scalars. Each one will be quoted in place:
-  computer_science/gnu_linux/telegraf.md (title)
-Continue? [y/N]
 ```
 
 `-force` also covers the output phase itself: a document that fails to serialize
@@ -605,23 +633,6 @@ cp -r testdata/vault /tmp/scratch
 markdown-tools-cli -dir /tmp/scratch -fix-duplicates -F     # prompts; y/yes proceeds
 markdown-tools-cli -dir /tmp/scratch -check-duplicates -F -include-unshared # now clean
 ```
-
-### Repairing unquoted titles
-
-A title like `Telegraf: metrics collector` is invalid YAML until it is quoted.
-`-fix-frontmatter` does that in place and prompts, the same way `-fix-duplicates`
-does. It does not need `-force` to start, because it never goes through the
-index:
-
-```sh
-cp -r testdata/vault /tmp/scratch
-echo y | markdown-tools-cli -dir /tmp/scratch -fix-frontmatter
-markdown-tools-cli -dir /tmp/scratch -validate
-```
-
-The fixture's `broken-frontmatter.md` is an unclosed `[`, which quoting cannot
-fix; `-validate` will still name it. The colon-space case is the one this flag
-is for.
 
 ### Checking the vault
 

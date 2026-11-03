@@ -14,6 +14,8 @@ not share an address with a body edge for the same target. The label is part
 of that preimage, so a body `URL` edge does not keep the address a `WEBSITE`
 edge had. `RawMarkdownHash` is a plain hex sha256 of the body, not an IPLD
 address — it identifies content, but it is not a CID and is not used as a key.
+`Asset.SHA256` is the same kind of hash of a non-markdown file's bytes, and is
+likewise not a CID. Assets are only hashed when `Options.HashAssets` is set.
 
 The same addresses show up as keys and fields when the index leaves this package
 as JSON; the shapes are in [JSON schema](json-schema.md).

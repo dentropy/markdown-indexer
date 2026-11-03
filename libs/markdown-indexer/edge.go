@@ -41,18 +41,18 @@ type Edge struct {
 // Front matter uses its own labels so a hit there does not collapse into the
 // body edge for the same target.
 const (
-	labelInternal             = "INTERNAL"
-	labelInternalMissing      = "INTERNAL_MISSING"
-	labelURL                  = "URL"
-	labelTag                  = "TAG"
-	labelInternalAsset        = "INTERNAL_ASSET"
-	labelExternalAsset        = "EXTERNAL_ASSET"
-	labelEmbeddedMarkdown     = "EMBEDDED_MARKDOWN"
+	labelInternal                = "INTERNAL"
+	labelInternalMissing         = "INTERNAL_MISSING"
+	labelURL                     = "URL"
+	labelTag                     = "TAG"
+	labelInternalAsset           = "INTERNAL_ASSET"
+	labelExternalAsset           = "EXTERNAL_ASSET"
+	labelEmbeddedMarkdown        = "EMBEDDED_MARKDOWN"
 	labelEmbeddedMarkdownMissing = "EMBEDDED_MARKDOWN_MISSING"
-	labelFrontInternal        = "FRONTMATTER_INTERNAL"
-	labelFrontInternalMissing = "FRONTMATTER_INTERNAL_MISSING"
-	labelFrontURL             = "FRONTMATTER_URL"
-	labelFrontTag             = "FRONTMATTER_TAG"
+	labelFrontInternal           = "FRONTMATTER_INTERNAL"
+	labelFrontInternalMissing    = "FRONTMATTER_INTERNAL_MISSING"
+	labelFrontURL                = "FRONTMATTER_URL"
+	labelFrontTag                = "FRONTMATTER_TAG"
 )
 
 // hasURLScheme reports whether s begins with an absolute-URI scheme, the

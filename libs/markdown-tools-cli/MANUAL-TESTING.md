@@ -214,6 +214,17 @@ the file named:
 ./markdown-tools-cli -dir testdata/vault -vaultcheck -q; echo "exit=$?"
 ```
 
+#### Assets and site
+
+``` bash
+./markdown-tools-cli -dir testdata/vault -F -q -assets | jq 'keys | length'
+./markdown-tools-cli -dir testdata/vault -F -q -assets-dir /tmp/md-assets
+./markdown-tools-cli -dir testdata/vault -F -q -site-dir /tmp/md-site
+ls /tmp/md-site/articles /tmp/md-site/backlinks /tmp/md-site/frontmatter
+```
+
+`-backlinks` JSON must not grow a `sha256` field.
+
 #### Memory estimate
 
 ``` bash

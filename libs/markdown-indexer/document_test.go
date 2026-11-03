@@ -365,11 +365,11 @@ func TestBuildGraphUnresolved(t *testing.T) {
 	}
 	for _, e := range graph {
 		if e.ToDocumentID != "nonexistent" {
-		t.Errorf("unresolved link ToDocumentID = %q, want nonexistent", e.ToDocumentID)
-	}
-	if e.Label != "INTERNAL_MISSING" {
-		t.Errorf("unresolved link Label = %q, want INTERNAL_MISSING", e.Label)
-	}
+			t.Errorf("unresolved link ToDocumentID = %q, want nonexistent", e.ToDocumentID)
+		}
+		if e.Label != "INTERNAL_MISSING" {
+			t.Errorf("unresolved link Label = %q, want INTERNAL_MISSING", e.Label)
+		}
 	}
 }
 

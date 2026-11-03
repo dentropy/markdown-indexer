@@ -1200,6 +1200,11 @@ func TestManifestFlagValidation(t *testing.T) {
 		{"manifest and wikilinks", []string{"-dir", dir, "-manifest", "-wikilinks"}},
 		{"manifest and backlinks", []string{"-dir", dir, "-manifest", "-backlinks"}},
 		{"manifest and backlinks dir", []string{"-dir", dir, "-manifest", "-backlinks-dir", t.TempDir()}},
+		{"manifest and assets", []string{"-dir", dir, "-manifest", "-assets"}},
+		{"assets and backlinks", []string{"-dir", dir, "-assets", "-backlinks"}},
+		{"site and manifest", []string{"-dir", dir, "-site-dir", t.TempDir(), "-manifest"}},
+		{"site and out", []string{"-dir", dir, "-site-dir", t.TempDir(), "-out", "x"}},
+		{"assets-dir and out", []string{"-dir", dir, "-assets-dir", t.TempDir(), "-out", "x"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1208,5 +1213,118 @@ func TestManifestFlagValidation(t *testing.T) {
 				t.Fatalf("want an error for %v", c.args)
 			}
 		})
+	}
+}
+
+func TestRunWithAssets(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "note.md", "---\nuuid: aaa\nshare: true\n---\nSee ![[diagram.png]].\n")
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	png := []byte("PNG")
+	if err := os.WriteFile(filepath.Join(dir, "assets", "diagram.png"), png, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-assets", "-q"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("unexpected error: %v\n%s", err, stderr.String())
+	}
+	var got map[string]markdownindexer.Asset
+	if err := json.Unmarshal([]byte(stdout.String()), &got); err != nil {
+		t.Fatalf("stdout is not an asset index: %v\n%s", err, stdout.String())
+	}
+	a, ok := got["assets/diagram.png"]
+	if !ok {
+		t.Fatalf("missing assets/diagram.png in %s", stdout.String())
+	}
+	if len(a.SHA256) != 64 {
+		t.Errorf("sha256 = %q, want 64 hex chars", a.SHA256)
+	}
+
+	var backlinksOut strings.Builder
+	if err := runWith([]string{"-dir", dir, "-backlinks", "-q"}, &backlinksOut, &stderr, strings.NewReader("")); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(backlinksOut.String(), "sha256") || strings.Contains(backlinksOut.String(), `"assets"`) {
+		t.Errorf("-backlinks must not grow asset fields: %s", backlinksOut.String())
+	}
+}
+
+func TestRunWithAssetsDir(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "note.md", "---\nuuid: aaa\nshare: true\n---\nHi.\n")
+	png := []byte("PNG")
+	if err := os.WriteFile(filepath.Join(dir, "pic.png"), png, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "assets")
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-assets-dir", out, "-q"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("%v\n%s", err, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("-assets-dir should not write stdout: %s", stdout.String())
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !strings.HasSuffix(entries[0].Name(), ".png") {
+		t.Errorf("want one hashed png, got %v", entries)
+	}
+}
+
+func TestRunWithSiteDir(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMD(t, dir, "alpha.md", "---\nuuid: aaa\ntitle: Alpha\nshare: true\n---\nSee ![[diagram.png]] and [[beta]].\n")
+	writeTestMD(t, dir, "beta.md", "---\nuuid: bbb\nshare: true\n---\nBeta.\n")
+	writeTestMD(t, dir, "secret.md", "---\nuuid: ccc\nshare: false\n---\n![[secret.png]]\n")
+	if err := os.WriteFile(filepath.Join(dir, "diagram.png"), []byte("PNG"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "secret.png"), []byte("SECRET"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "site")
+	var stdout, stderr strings.Builder
+	if err := runWith([]string{"-dir", dir, "-site-dir", out, "-q"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatalf("%v\n%s", err, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("-site-dir should not write stdout: %s", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(out, "manifest.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "articles", "aaa.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "articles", "ccc.json")); err == nil {
+		t.Error("unshared document must not be published")
+	}
+	article, err := os.ReadFile(filepath.Join(out, "articles", "aaa.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(article), "assets/") {
+		t.Errorf("published body should point at hashed assets: %s", article)
+	}
+	if _, err := os.Stat(filepath.Join(out, "backlinks", "bbb.json")); err != nil {
+		t.Fatal(err)
+	}
+	assetDir := filepath.Join(out, "assets")
+	entries, err := os.ReadDir(assetDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("want one published asset (secret.png unreferenced by shared docs), got %v", entries)
+	}
+
+	stderr.Reset()
+	if err := runWith([]string{"-dir", dir, "-site-dir", out, "-q"}, &stdout, &stderr, strings.NewReader("")); err != nil {
+		t.Fatal(err)
 	}
 }

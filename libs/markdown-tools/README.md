@@ -1,7 +1,7 @@
 # markdown-tools
 
-Writes derived output: front matter in a markdown vault, and backlinks JSON in a
-publish directory. It is the write half of the
+Writes derived output: front matter in a markdown vault, backlinks JSON, hashed
+assets, and a static site tree. It is the write half of the
 [markdown-indexer](../../README.md) repo: the sibling
 [`markdown-indexer`](../markdown-indexer) only reads, and this package imports
 its index to decide what to change.
@@ -30,6 +30,8 @@ func InitFrontMatter(ix *markdownindexer.Index, dir, idKey string, share *bool) 
 func SetShare(ix *markdownindexer.Index, dir, idKey string, share bool) ([]string, error)
 func ReplaceDuplicateUUIDs(ix *markdownindexer.Index, dir, idKey string) ([]string, error)
 func WriteBacklinks(backlinks map[string]markdownindexer.Backlinks, dir string, opts BacklinksOptions) (written, removed []string, err error)
+func WriteAssets(assets []markdownindexer.Asset, vault, dir string, opts WriteOptions) (written, removed []string, err error)
+func WriteSite(docs []markdownindexer.Document, assets []markdownindexer.Asset, vault, dir string, opts WriteOptions) (SiteResult, error)
 ```
 
 A file whose front matter does not parse never reaches an index, so quoting

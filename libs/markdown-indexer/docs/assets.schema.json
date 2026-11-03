@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "markdown-indexer asset index",
+  "description": "The asset index: every hashed non-markdown file keyed by its relative path. Produced when Options.HashAssets is set, and printed by the CLI -assets flag.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/asset"
+  },
+  "$defs": {
+    "asset": {
+      "title": "markdown-indexer asset",
+      "description": "One non-markdown file as indexed. Its content identity is the sha256 of its bytes, not its path.",
+      "type": "object",
+      "required": [
+        "relativePath",
+        "name",
+        "modifiedUnix",
+        "sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "description": "Path relative to the vault root, always with forward slashes."
+        },
+        "name": {
+          "type": "string",
+          "description": "File name, including its extension."
+        },
+        "modifiedUnix": {
+          "type": "integer",
+          "description": "Last modified, as a unix timestamp in seconds."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Hex sha256 of the file's bytes. Identical files share a hash. It is not an IPLD CID."
+        }
+      }
+    }
+  }
+}

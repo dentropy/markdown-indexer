@@ -36,6 +36,12 @@ type Options struct {
 	// It is off by default: an index is the whole vault unless the caller asks
 	// for less.
 	Shared bool
+
+	// HashAssets indexes every non-markdown regular file as an Asset with a
+	// sha256 of its bytes. It is off by default: a scan is documents and edges
+	// unless the caller asks for assets. Hidden files, hidden directories,
+	// symlinks, and markdown files that did not match Pattern are skipped.
+	HashAssets bool
 }
 
 func (o Options) pattern() string {
@@ -122,6 +128,10 @@ type Index struct {
 	// Edges holds the graph of wikilinks, inline tags, and front matter edges, keyed by content address.
 	Edges map[string]Edge
 
+	// Assets holds every indexed non-markdown file, ordered by relative path.
+	// It is empty unless Options.HashAssets was set.
+	Assets []Asset
+
 	// Problems holds the files that could not be indexed. A non-empty slice
 	// does not invalidate the index; it means the vault has broken files.
 	Problems []Problem
@@ -187,7 +197,8 @@ func (ix *Index) Err() error {
 // Scan walks the vault at dir and indexes every markdown file matching
 // opts.Pattern. Files whose front matter does not parse become Problems on the
 // returned index rather than aborting the scan; a non-nil error means the
-// vault itself could not be read.
+// vault itself could not be read. With HashAssets, non-markdown regular files
+// are hashed into Index.Assets on the same walk.
 func Scan(dir string, opts Options) (*Index, error) {
 	ix := &Index{Edges: map[string]Edge{}}
 	pattern := opts.pattern()
@@ -204,19 +215,33 @@ func Scan(dir string, opts Options) (*Index, error) {
 			return err
 		}
 		name := filepath.ToSlash(rel)
-		if !MatchGlob(pattern, name) {
+		if MatchGlob(pattern, name) {
+			doc, err := indexFile(p, name, opts.idKey())
+			if err != nil {
+				ix.Problems = append(ix.Problems, Problem{
+					Paths: []string{name},
+					Err:   &BrokenFrontMatterError{Err: err},
+				})
+				return nil
+			}
+			ix.Documents = append(ix.Documents, doc)
 			return nil
 		}
-
-		doc, err := indexFile(p, name, opts.idKey())
+		if !opts.HashAssets {
+			return nil
+		}
+		if isHiddenPath(name) || isMarkdownName(name) || !isRegularFile(d) {
+			return nil
+		}
+		asset, err := indexAsset(p, name)
 		if err != nil {
 			ix.Problems = append(ix.Problems, Problem{
 				Paths: []string{name},
-				Err:   &BrokenFrontMatterError{Err: err},
+				Err:   err,
 			})
 			return nil
 		}
-		ix.Documents = append(ix.Documents, doc)
+		ix.Assets = append(ix.Assets, asset)
 		return nil
 	})
 	if err != nil {
@@ -225,6 +250,9 @@ func Scan(dir string, opts Options) (*Index, error) {
 
 	sort.Slice(ix.Documents, func(i, j int) bool {
 		return ix.Documents[i].RelativePath < ix.Documents[j].RelativePath
+	})
+	sort.Slice(ix.Assets, func(i, j int) bool {
+		return ix.Assets[i].RelativePath < ix.Assets[j].RelativePath
 	})
 
 	if opts.Shared {
