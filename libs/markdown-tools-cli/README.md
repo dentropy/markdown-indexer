@@ -25,10 +25,11 @@ Requires Go 1.27.
 ## Usage
 
 ```sh
+./markdown-tools-cli
 ./markdown-tools-cli [flags]
 ```
 
-The default operation writes the document index as JSON. `-wikilinks` writes the
+With no flags, the command prints flag help and exits. The default operation writes the document index as JSON. `-wikilinks` writes the
 wikilink graph instead, `-backlinks` writes each document's incoming links,
 `-assets` writes the hashed non-markdown files, `-manifest` writes the vault's
 title/UUID/path directory, `-site-dir` publishes the static JSON tree, and
@@ -55,7 +56,11 @@ export VAULT_DIR=examples
 ./markdown-tools-cli -dir $VAULT_DIR -include-unshared -wikilinks
 ./markdown-tools-cli -dir $VAULT_DIR -include-unshared -backlinks
 ./markdown-tools-cli -dir $VAULT_DIR -include-unshared -manifest
+./markdown-tools-cli -dir $VAULT_DIR -include-unshared -assets
 
+
+mkdir test-site
+./markdown-tools-cli -dir $VAULT_DIR -include-unshared -site-dir test-site
 ```
 
 ```sh

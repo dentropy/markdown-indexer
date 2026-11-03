@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -259,9 +262,27 @@ func TestWriteFlagValidation(t *testing.T) {
 		{"-dir", ".", "-initfrontmatter", "-share=maybe"},
 	}
 	for _, args := range cases {
-		if _, err := parseFlags(args); err == nil {
+		if _, err := parseFlags(args, io.Discard); err == nil {
 			t.Errorf("parseFlags(%v) should fail", args)
 		}
+	}
+}
+
+func TestNoArgsPrintsHelp(t *testing.T) {
+	var stdout, stderr strings.Builder
+	err := runWith(nil, &stdout, &stderr, strings.NewReader(""))
+	if !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("want flag.ErrHelp, got %v", err)
+	}
+	if stdout.String() != "" {
+		t.Errorf("stdout should be empty, got %q", stdout.String())
+	}
+	help := stderr.String()
+	if !strings.Contains(help, "Usage of markdown-tools-cli") {
+		t.Errorf("stderr missing usage header: %q", help)
+	}
+	if !strings.Contains(help, "-dir") {
+		t.Errorf("stderr missing -dir flag: %q", help)
 	}
 }
 

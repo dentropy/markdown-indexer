@@ -77,6 +77,9 @@ func filterSharedDocs(docs []markdownindexer.Document, opts options) []markdowni
 
 func main() {
 	if err := runWith(os.Args[1:], os.Stdout, os.Stderr, os.Stdin); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -87,7 +90,7 @@ func run(args []string, stdout io.Writer) error {
 }
 
 func runWith(args []string, stdout, stderr io.Writer, stdin io.Reader) error {
-	opts, err := parseFlags(args)
+	opts, err := parseFlags(args, stderr)
 	if err != nil {
 		return err
 	}
@@ -307,8 +310,9 @@ func assetsIndex(assets []markdownindexer.Asset) map[string]markdownindexer.Asse
 	return (&markdownindexer.Index{Assets: assets}).ByPath()
 }
 
-func parseFlags(args []string) (options, error) {
+func parseFlags(args []string, output io.Writer) (options, error) {
 	fs := flag.NewFlagSet("markdown-tools-cli", flag.ContinueOnError)
+	fs.SetOutput(output)
 	var opts options
 	fs.StringVar(&opts.dir, "dir", ".", "directory to scan for markdown files")
 	fs.StringVar(&opts.out, "out", "", "output file (defaults to stdout)")
@@ -336,6 +340,10 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&opts.quiet, "quiet", false, "print only the JSON, suppressing progress notices on stderr")
 	fs.BoolVar(&opts.quiet, "q", false, "shorthand for -quiet")
 	fs.BoolVar(&opts.vaultCheck, "validate", false, "check the vault for broken front matter and duplicate UUIDs, then exit non-zero if any are found")
+	if len(args) == 0 {
+		fs.Usage()
+		return options{}, flag.ErrHelp
+	}
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
 	}
