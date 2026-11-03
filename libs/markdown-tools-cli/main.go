@@ -35,6 +35,9 @@ type options struct {
 	wikilinks       bool
 	backlinks       bool
 	backlinksDir    string
+	assets          bool
+	assetsDir       string
+	siteDir         string
 	id              string
 	prune           bool
 	force           bool
@@ -155,6 +158,18 @@ func runWith(args []string, stdout, stderr io.Writer, stdin io.Reader) error {
 	enc.SetIndent("", "  ")
 
 	switch {
+	case opts.siteDir != "":
+		if err := publishSite(docs, ix.Assets, opts, notices); err != nil {
+			return err
+		}
+	case opts.assets && opts.assetsDir != "":
+		if err := publishAssets(ix.Assets, opts, notices); err != nil {
+			return err
+		}
+	case opts.assets:
+		if err := enc.Encode(assetsIndex(ix.Assets)); err != nil {
+			return fmt.Errorf("encode assets: %w", err)
+		}
 	case opts.backlinks && opts.backlinksDir != "":
 		if err := publishBacklinks(docs, opts, notices); err != nil {
 			return err
@@ -215,7 +230,11 @@ func runWith(args []string, stdout, stderr io.Writer, stdin io.Reader) error {
 // the default behaviour of failing loudly on a malformed vault. The share filter
 // is not applied here: callers decide what to do with the whole vault.
 func scanVault(opts options, stderr io.Writer) (*markdownindexer.Index, error) {
-	ix, err := markdownindexer.Scan(opts.dir, markdownindexer.Options{Pattern: opts.pattern, IDKey: opts.idKey})
+	ix, err := markdownindexer.Scan(opts.dir, markdownindexer.Options{
+		Pattern:    opts.pattern,
+		IDKey:      opts.idKey,
+		HashAssets: opts.assets || opts.siteDir != "",
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -284,6 +303,10 @@ func documentsIndex(docs []markdownindexer.Document) map[string]markdownindexer.
 	return (&markdownindexer.Index{Documents: docs}).ByUUID()
 }
 
+func assetsIndex(assets []markdownindexer.Asset) map[string]markdownindexer.Asset {
+	return (&markdownindexer.Index{Assets: assets}).ByPath()
+}
+
 func parseFlags(args []string) (options, error) {
 	fs := flag.NewFlagSet("markdown-tools-cli", flag.ContinueOnError)
 	var opts options
@@ -303,8 +326,11 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&opts.wikilinks, "wikilinks", false, "output a JSON graph of wikilinks instead of the document index")
 	fs.BoolVar(&opts.backlinks, "backlinks", false, "output each document's incoming links instead of the document index")
 	fs.StringVar(&opts.backlinksDir, "backlinks-dir", "", "write one backlinks JSON file per document into this directory (implies -backlinks)")
+	fs.BoolVar(&opts.assets, "assets", false, "output the hashed non-markdown files instead of the document index")
+	fs.StringVar(&opts.assetsDir, "assets-dir", "", "write hashed asset files into this directory (implies -assets)")
+	fs.StringVar(&opts.siteDir, "site-dir", "", "publish articles, frontmatter, assets, manifest, and backlinks into this directory")
 	fs.StringVar(&opts.id, "id", "", "with -backlinks, output only this document's backlinks file")
-	fs.BoolVar(&opts.prune, "prune", true, "with -backlinks-dir, remove *.json files for documents no longer published")
+	fs.BoolVar(&opts.prune, "prune", true, "with -backlinks-dir, -assets-dir, or -site-dir, remove files that no longer belong")
 	fs.BoolVar(&opts.force, "force", false, "skip documents with broken front matter and index the rest instead of aborting")
 	fs.BoolVar(&opts.force, "F", false, "shorthand for -force")
 	fs.BoolVar(&opts.quiet, "quiet", false, "print only the JSON, suppressing progress notices on stderr")
@@ -325,17 +351,26 @@ func parseFlags(args []string) (options, error) {
 	if opts.backlinksDir != "" {
 		opts.backlinks = true
 	}
+	if opts.assetsDir != "" {
+		opts.assets = true
+	}
 	outputModes := 0
-	for _, on := range []bool{opts.wikilinks, opts.backlinks, opts.manifest} {
+	for _, on := range []bool{opts.wikilinks, opts.backlinks, opts.manifest, opts.assets, opts.siteDir != ""} {
 		if on {
 			outputModes++
 		}
 	}
 	if outputModes > 1 {
-		return options{}, errors.New("-wikilinks, -backlinks, and -manifest are mutually exclusive")
+		return options{}, errors.New("-wikilinks, -backlinks, -manifest, -assets, and -site-dir are mutually exclusive")
 	}
 	if opts.backlinksDir != "" && opts.out != "" {
 		return options{}, errors.New("-backlinks-dir cannot be combined with -out")
+	}
+	if opts.assetsDir != "" && opts.out != "" {
+		return options{}, errors.New("-assets-dir cannot be combined with -out")
+	}
+	if opts.siteDir != "" && opts.out != "" {
+		return options{}, errors.New("-site-dir cannot be combined with -out")
 	}
 	if opts.id != "" && !opts.backlinks {
 		return options{}, errors.New("-id only applies with -backlinks")
@@ -610,5 +645,64 @@ func publishBacklinks(docs []markdownindexer.Document, opts options, notices io.
 		fmt.Fprintf(notices, "removed stale: %s\n", filepath.Join(opts.backlinksDir, name))
 	}
 	fmt.Fprintf(notices, "%d backlink file(s) written, %d removed\n", len(written), len(removed))
+	return nil
+}
+
+func publishAssets(assets []markdownindexer.Asset, opts options, notices io.Writer) error {
+	written, removed, err := markdowntools.WriteAssets(
+		assets,
+		opts.dir,
+		opts.assetsDir,
+		markdowntools.WriteOptions{Prune: opts.prune},
+	)
+	if err != nil {
+		return err
+	}
+	for _, name := range written {
+		fmt.Fprintf(notices, "wrote asset: %s\n", filepath.Join(opts.assetsDir, name))
+	}
+	for _, name := range removed {
+		fmt.Fprintf(notices, "removed stale: %s\n", filepath.Join(opts.assetsDir, name))
+	}
+	fmt.Fprintf(notices, "%d asset file(s) written, %d removed\n", len(written), len(removed))
+	return nil
+}
+
+func publishSite(docs []markdownindexer.Document, assets []markdownindexer.Asset, opts options, notices io.Writer) error {
+	res, err := markdowntools.WriteSite(docs, assets, opts.dir, opts.siteDir, markdowntools.WriteOptions{Prune: opts.prune})
+	if err != nil {
+		return err
+	}
+	if res.ManifestWritten {
+		fmt.Fprintf(notices, "wrote manifest: %s\n", filepath.Join(opts.siteDir, "manifest.json"))
+	}
+	for _, name := range res.ArticlesWritten {
+		fmt.Fprintf(notices, "wrote articles: %s\n", filepath.Join(opts.siteDir, "articles", name))
+	}
+	for _, name := range res.FrontMatterWritten {
+		fmt.Fprintf(notices, "wrote frontmatter: %s\n", filepath.Join(opts.siteDir, "frontmatter", name))
+	}
+	for _, name := range res.AssetsWritten {
+		fmt.Fprintf(notices, "wrote assets: %s\n", filepath.Join(opts.siteDir, "assets", name))
+	}
+	for _, name := range res.BacklinksWritten {
+		fmt.Fprintf(notices, "wrote backlinks: %s\n", filepath.Join(opts.siteDir, "backlinks", name))
+	}
+	for _, name := range res.ArticlesRemoved {
+		fmt.Fprintf(notices, "removed stale: %s\n", filepath.Join(opts.siteDir, "articles", name))
+	}
+	for _, name := range res.FrontMatterRemoved {
+		fmt.Fprintf(notices, "removed stale: %s\n", filepath.Join(opts.siteDir, "frontmatter", name))
+	}
+	for _, name := range res.AssetsRemoved {
+		fmt.Fprintf(notices, "removed stale: %s\n", filepath.Join(opts.siteDir, "assets", name))
+	}
+	for _, name := range res.BacklinksRemoved {
+		fmt.Fprintf(notices, "removed stale: %s\n", filepath.Join(opts.siteDir, "backlinks", name))
+	}
+	fmt.Fprintf(notices, "%d article file(s) written, %d removed\n", len(res.ArticlesWritten), len(res.ArticlesRemoved))
+	fmt.Fprintf(notices, "%d frontmatter file(s) written, %d removed\n", len(res.FrontMatterWritten), len(res.FrontMatterRemoved))
+	fmt.Fprintf(notices, "%d asset file(s) written, %d removed\n", len(res.AssetsWritten), len(res.AssetsRemoved))
+	fmt.Fprintf(notices, "%d backlink file(s) written, %d removed\n", len(res.BacklinksWritten), len(res.BacklinksRemoved))
 	return nil
 }

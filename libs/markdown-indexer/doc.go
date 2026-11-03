@@ -1,6 +1,7 @@
 // Package markdownindexer indexes a tree of markdown files into an in-memory index of
-// documents, the wikilink edges between them, an edge for each inline tag, and
-// the wikilinks, markdown links, and #tags found in front matter.
+// documents, the wikilink edges between them, an edge for each inline tag,
+// the wikilinks, markdown links, and #tags found in front matter, and, when
+// asked, the sha256 of every non-markdown file.
 //
 // A vault is a directory tree of markdown files; it is the source of truth for
 // what exists. A document is one markdown file as indexed: its relative path,

@@ -3,8 +3,8 @@
 Indexes a tree of markdown files into an in-memory index of documents, the
 wikilink edges between them, body embed edges, an edge for each inline `#tag`,
 the wikilinks, markdown links, and `#tags` found in front matter, the derived
-backlinks for each document, and a manifest of every document's title, UUID, and
-path.
+backlinks for each document, a manifest of every document's title, UUID, and
+path, and, when `HashAssets` is set, the sha256 of every non-markdown file.
 
 ## Use Case
 
@@ -63,6 +63,17 @@ location without loading the full index. See
 [JSON schema](docs/json-schema.md#json-schema) and
 [`manifest.schema.json`](docs/manifest.schema.json).
 
+```go
+idx, err := markdownindexer.Scan("./notes", markdownindexer.Options{HashAssets: true})
+asset, err := idx.ResolveAsset("diagram.png", "notes/idea.md")
+articles := idx.Articles()
+```
+
+`HashAssets` is off by default. When it is on, `Index.Assets` holds every
+non-markdown file and a hex sha256 of its bytes. `Articles` is the published
+per-document shape: identity, path, front matter CID, and body, without inlined
+metadata.
+
 ## What is not here
 
 Mirroring. This package produces the index; persisting or querying it is the
@@ -79,7 +90,7 @@ Also absent: writing. Every entry point here only reads.
 | [Usage](docs/usage.md)              | Scanning a vault, narrowing the index, indexing a single document            |
 | [Problems](docs/problems.md)        | Broken files, duplicate UUIDs, and checking a vault                          |
 | [Content addressing](docs/content-addressing.md) | How front matter and edges get their CIDs                           |
-| [JSON schema](docs/json-schema.md)  | The JSON shapes of documents, wikilinks, backlinks, and the manifest, as `documents.schema.json`, `wikilinks.schema.json`, `backlinks.schema.json`, and `manifest.schema.json` |
+| [JSON schema](docs/json-schema.md)  | The JSON shapes of documents, wikilinks, backlinks, the manifest, assets, and articles |
 
 ## Development
 

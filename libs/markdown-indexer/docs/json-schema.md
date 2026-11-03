@@ -9,6 +9,8 @@ and their field names are fixed. The schemas are kept as files next to this one:
 | [wikilinks.schema.json](wikilinks.schema.json) | The graph of wikilinks, inline tags, and front matter edges, keyed by content address | `$defs.wikilink`   |
 | [backlinks.schema.json](backlinks.schema.json) | The incoming links for one document, published at `/backlinks/$UUID.json` | `$defs.backlink` |
 | [manifest.schema.json](manifest.schema.json) | The single-file directory of the vault: every document's title, UUID, and path | `$defs.entry` |
+| [assets.schema.json](assets.schema.json) | The hashed non-markdown files, keyed by relative path, when `HashAssets` is on | `$defs.asset` |
+| [articles.schema.json](articles.schema.json) | The published per-document JSON at `/articles/$UUID.json` | the root object |
 
 Each file validates both levels: the root is the envelope the CLI prints, and
 `$defs` holds a single entry inside it.
@@ -52,6 +54,11 @@ duplicated UUID appears on more than one entry because a manifest describes the
 files that exist rather than collapsing them. It is the shape to publish at a
 fixed path such as `site/manifest.json` when a consumer needs to resolve an
 identifier to a readable name and location without carrying the whole index.
+
+`assets.schema.json` is the hashed non-markdown files keyed by relative path,
+produced when `Options.HashAssets` is set. `articles.schema.json` is one
+published document at `/articles/$UUID.json`: identity, path, front matter CID,
+and body, without inlined metadata.
 
 `label` is an enum of twelve values in three families. Body hits are
 `INTERNAL`, `INTERNAL_MISSING`, `URL`, `TAG`, `INTERNAL_ASSET`,

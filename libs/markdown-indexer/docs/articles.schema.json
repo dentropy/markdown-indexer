@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "markdown-indexer article",
+  "description": "The published per-document JSON at /articles/$UUID.json: identity, path, front matter CID, and markdown body, without the inlined front matter object.",
+  "type": "object",
+  "required": [
+    "uuid",
+    "relativePath",
+    "name",
+    "modifiedUnix",
+    "frontmatter_cid",
+    "raw_markdown",
+    "raw_markdown_hash"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "uuid": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The document's UUID. It is also the file name."
+    },
+    "relativePath": {
+      "type": "string",
+      "description": "Path relative to the vault root, always with forward slashes."
+    },
+    "name": {
+      "type": "string",
+      "description": "File name without the .md extension."
+    },
+    "modifiedUnix": {
+      "type": "integer",
+      "description": "Last modified, as a unix timestamp in seconds."
+    },
+    "frontmatter_cid": {
+      "type": "string",
+      "pattern": "^b[a-z2-7]+$",
+      "description": "CIDv1 (dag-json codec, sha2-256) of the front matter. Join to /frontmatter/$frontmatter_cid.json."
+    },
+    "raw_markdown": {
+      "type": "string",
+      "description": "The markdown body. A publisher may rewrite asset links in this field; raw_markdown_hash remains the vault body's hash."
+    },
+    "raw_markdown_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Hex sha256 of the vault body, even when raw_markdown has been rewritten."
+    }
+  }
+}

@@ -5,7 +5,7 @@ Indexes a markdown vault into content-addressed documents and a wikilink edge gr
 ## Vault and documents
 
 **Vault**:
-A directory tree of markdown files; the source of truth for what exists.
+A directory tree of markdown files, and the non-markdown files they may reference; the source of truth for what exists.
 _Avoid_: folder, notes directory
 
 **Document**:
@@ -35,7 +35,7 @@ A link target that starts with a scheme (`https:`, `mailto:`, `ipfs:`). It is ke
 _Avoid_: website, external link, URI
 
 **Asset**:
-An embedded non-markdown target, `![[image.png]]` or `![](assets/x.png)`. Kept as written; not a document, and not indexed.
+A non-markdown file in the vault, indexed by relative path and the sha256 of its bytes when hashing is on. It is not a document. An embed or wikilink to it is an asset edge; the target is kept as written and resolved against the asset index.
 _Avoid_: image, attachment, binary
 
 **Markdown embed**:
@@ -60,8 +60,12 @@ _Avoid_: incoming link, reverse link, reference
 
 ## The index
 
+**Article**:
+The published per-document record: UUID, path, front matter content address, and markdown body, without the inlined front matter object.
+_Avoid_: note, page, post
+
 **Index**:
-The in-memory collection of documents and edges derived from the vault. It is derived and read-only: the vault is always true, and this package never writes back.
+The in-memory collection of documents, edges, and assets derived from the vault. It is derived and read-only: the vault is always true, and this package never writes back.
 _Avoid_: snapshot, dataset
 
 **Manifest**:

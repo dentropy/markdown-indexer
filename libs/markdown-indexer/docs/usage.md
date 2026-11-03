@@ -63,6 +63,28 @@ differs.
 `Shared` applies to every edge, because the graph is built from the documents
 that survive the filter.
 
+## Assets
+
+With `Options{HashAssets: true}`, the same walk hashes every non-markdown
+regular file into `Index.Assets`, ordered by relative path. The hash is a hex
+sha256 of the file bytes, the same kind as `RawMarkdownHash`, not a CID. Hidden
+files, hidden directories, symlinks, and markdown files that did not match
+`Pattern` are skipped. `Shared` and `Pattern` still only select documents; they
+do not drop assets.
+
+```go
+idx, err := markdownindexer.Scan("./notes", markdownindexer.Options{HashAssets: true})
+asset, err := idx.ResolveAsset("diagram.png", "notes/idea.md")
+```
+
+`ResolveAsset` maps a wikilink or embed target to an indexed asset: an exact
+vault-relative path, then a path relative to the source document, then a unique
+basename. A URL-scheme target is not an asset. Several files sharing a basename
+return `ErrAssetAmbiguous`. The edge still stores the raw target; the hash is
+not part of the edge, so adding assets does not change any content address.
+
+The JSON shape is [assets.schema.json](assets.schema.json).
+
 ## Backlinks
 
 A backlink is one resolved body `INTERNAL` edge arriving at a document. The

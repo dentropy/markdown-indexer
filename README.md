@@ -97,6 +97,32 @@ markdown-tools-cli -dir ./notes -manifest -out site/manifest.json
 
 Shape: [`manifest.schema.json`](libs/markdown-indexer/docs/manifest.schema.json).
 
+## Hash assets
+
+With hashing on, the indexer records a sha256 of every non-markdown file.
+`-assets` prints that index; `-assets-dir` writes `assets/<sha256>.<ext>`.
+
+```sh
+markdown-tools-cli -dir ./notes -assets
+markdown-tools-cli -dir ./notes -assets-dir site/assets
+```
+
+## Publish a site
+
+One scan writes the static JSON tree an app can fetch:
+
+```sh
+markdown-tools-cli -dir ./notes -site-dir ./site
+```
+
+```
+site/manifest.json
+site/articles/<uuid>.json
+site/frontmatter/<cid>.json
+site/assets/<sha256>.<ext>
+site/backlinks/<uuid>.json
+```
+
 ## A note on the names
 
 The **vault** is the domain term: a directory tree of markdown files, the source
