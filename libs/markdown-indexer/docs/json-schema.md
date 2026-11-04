@@ -52,7 +52,7 @@ describes a single JSON file that lists every document with a non-empty UUID by
 without a UUID are omitted, an empty vault yields `"documents": []`, and a
 duplicated UUID appears on more than one entry because a manifest describes the
 files that exist rather than collapsing them. It is the shape to publish at a
-fixed path such as `site/manifest.json` when a consumer needs to resolve an
+fixed path such as `site/directory.json` when a consumer needs to resolve an
 identifier to a readable name and location without carrying the whole index.
 
 `assets.schema.json` is the hashed non-markdown files keyed by relative path,

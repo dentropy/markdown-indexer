@@ -110,7 +110,7 @@ export VAULT_DIR=`~/Vault`
 | `-backlinks-dir` | *(unset)* | Write one backlinks file per document; implies `-backlinks`  |
 | `-assets`    | `false`    | Output the hashed non-markdown files instead of the index      |
 | `-assets-dir`| *(unset)*  | Write hashed asset files; implies `-assets`                    |
-| `-site-dir`  | *(unset)*  | Publish articles, frontmatter, assets, manifest, and backlinks |
+| `-site-dir`  | *(unset)*  | Publish articles, frontmatter, assets, directory.json, and backlinks |
 | `-id`        | *(unset)*  | With `-backlinks`, print only that document's file             |
 | `-prune`     | `true`     | With `-backlinks-dir`, `-assets-dir`, or `-site-dir`, delete stale files |
 | `-manifest`  | `false`    | Output a single JSON file of every processed document's `title`, `uuid`, and `path` |
@@ -271,7 +271,7 @@ field. Shape: [`assets.schema.json`](../markdown-indexer/docs/assets.schema.json
 
 ```
 site/
-  manifest.json
+  directory.json
   articles/<uuid>.json
   frontmatter/<frontmatter_cid>.json
   assets/<sha256>.<ext>

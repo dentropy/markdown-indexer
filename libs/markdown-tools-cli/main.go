@@ -332,7 +332,7 @@ func parseFlags(args []string, output io.Writer) (options, error) {
 	fs.StringVar(&opts.backlinksDir, "backlinks-dir", "", "write one backlinks JSON file per document into this directory (implies -backlinks)")
 	fs.BoolVar(&opts.assets, "assets", false, "output the hashed non-markdown files instead of the document index")
 	fs.StringVar(&opts.assetsDir, "assets-dir", "", "write hashed asset files into this directory (implies -assets)")
-	fs.StringVar(&opts.siteDir, "site-dir", "", "publish articles, frontmatter, assets, manifest, and backlinks into this directory")
+	fs.StringVar(&opts.siteDir, "site-dir", "", "publish articles, frontmatter, assets, directory.json, and backlinks into this directory")
 	fs.StringVar(&opts.id, "id", "", "with -backlinks, output only this document's backlinks file")
 	fs.BoolVar(&opts.prune, "prune", true, "with -backlinks-dir, -assets-dir, or -site-dir, remove files that no longer belong")
 	fs.BoolVar(&opts.force, "force", false, "skip documents with broken front matter and index the rest instead of aborting")
@@ -682,7 +682,7 @@ func publishSite(docs []markdownindexer.Document, assets []markdownindexer.Asset
 		return err
 	}
 	if res.ManifestWritten {
-		fmt.Fprintf(notices, "wrote manifest: %s\n", filepath.Join(opts.siteDir, "manifest.json"))
+		fmt.Fprintf(notices, "wrote directory: %s\n", filepath.Join(opts.siteDir, "directory.json"))
 	}
 	for _, name := range res.ArticlesWritten {
 		fmt.Fprintf(notices, "wrote articles: %s\n", filepath.Join(opts.siteDir, "articles", name))

@@ -1,8 +1,8 @@
-# The published site is articles, frontmatter, assets, manifest, and backlinks
+# The published site is articles, frontmatter, assets, directory.json, and backlinks
 
 A publisher writes one vault scan as a static JSON tree an app can fetch:
 
-- `manifest.json` is the existing path-ordered directory (ADR 0004).
+- `directory.json` is the existing path-ordered directory (ADR 0004).
 - `articles/<uuid>.json` is the document without inlined front matter.
 - `frontmatter/<frontmatter_cid>.json` is the parsed front matter, addressed by
   the indexer's CID, so identical front matter is one file. Those bytes are not

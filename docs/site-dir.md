@@ -46,7 +46,7 @@ The layout decision is recorded in [ADR 0006](../libs/markdown-indexer/docs/adr/
 
 ```
 <site>/
-  manifest.json
+  directory.json
   articles/<uuid>.json
   frontmatter/<frontmatter_cid>.json
   assets/<sha256><ext>
@@ -61,14 +61,14 @@ Paths inside JSON always use `/`, including on Windows.
 
 ## How a renderer loads one document
 
-Treat `manifest.json` as the catalog. Every published document is one object in `documents`. Render a document with four reads:
+Treat `directory.json` as the catalog. Every published document is one object in `documents`. Render a document with four reads:
 
-1. `manifest.json`, to list documents and to build the name index below.
+1. `directory.json`, to list documents and to build the name index below.
 2. `articles/<uuid>.json`, for the body and the front matter address.
 3. `frontmatter/<frontmatter_cid>.json`, for title and the rest of the metadata. The CID comes from the article. Cache this response forever: the filename is the content address, and a change produces a new CID and a new file.
 4. `backlinks/<uuid>.json`, for incoming links. The file exists for every published document. `backlinks` is `[]` when nothing links to it.
 
-Asset bytes are a fifth read, and only when the body (or the renderer) asks for one: `assets/<sha256><ext>`, taken from a markdown destination that starts with `assets/`. That URL is relative to `<site>/`, the directory that contains `manifest.json`. It is not relative to `articles/`. Fetching `articles/assets/...` is wrong.
+Asset bytes are a fifth read, and only when the body (or the renderer) asks for one: `assets/<sha256><ext>`, taken from a markdown destination that starts with `assets/`. That URL is relative to `<site>/`, the directory that contains `directory.json`. It is not relative to `articles/`. Fetching `articles/assets/...` is wrong.
 
 `raw_markdown_hash` and `modifiedUnix` are informational. They are not cache keys for the published article. `raw_markdown_hash` is the sha256 of the vault body *before* asset links were rewritten, so hashing the published `raw_markdown` disagrees with it whenever a rewrite happened. Front matter files and asset files are the ones that are safe to cache immutably. The hex in an asset filename is the sha256 of those bytes, and a client may check it. The front matter CID is *not* the hash of the pretty-printed file. Do not recompute it from the file.
 
@@ -90,7 +90,7 @@ The CLI scans the vault, filters documents, rewrites asset links in memory, then
 
 ### Which documents are published
 
-A document is published only when its identity string is non-empty. Documents with no `uuid` (and files with no front matter) are omitted from the manifest, `articles/`, `frontmatter/`, and `backlinks/`.
+A document is published only when its identity string is non-empty. Documents with no `uuid` (and files with no front matter) are omitted from `directory.json`, `articles/`, `frontmatter/`, and `backlinks/`.
 
 By default the CLI then keeps only documents whose front matter `share` value is true. A boolean `true` counts, as does a string `strconv.ParseBool` accepts: `1`, `t`, `T`, `TRUE`, `true`, `True`. Anything else, including a missing `share` key, `false`, `no`, or `yes`, is unpublished. `-include-unshared` keeps every identified document.
 
@@ -103,11 +103,11 @@ Documents are ordered by `relativePath`, byte-wise.
 | Output | Duplicate UUIDs |
 | --- | --- |
 | `articles/<uuid>.json` | One file. The greatest `relativePath` wins. |
-| `manifest.json` | One entry per file. Both rows are kept, so a UUID can appear twice. |
+| `directory.json` | One entry per file. Both rows are kept, so a UUID can appear twice. |
 | `backlinks/<uuid>.json` | One file. Source and target identity use the greatest path, matching the article. |
 | `frontmatter/<cid>.json` | One file per distinct CID among every identified document, including a duplicate that lost the article slot. |
 
-The catalog a renderer should trust for "what can I open" is the manifest. The body for a UUID is the article file. If a UUID is listed twice, both rows share that one body. Orphan front matter files (a CID no article points at) can exist in that collision case. Load front matter through `article.frontmatter_cid`. Do not treat a directory listing of `frontmatter/` as the document list.
+The catalog a renderer should trust for "what can I open" is `directory.json`. The body for a UUID is the article file. If a UUID is listed twice, both rows share that one body. Orphan front matter files (a CID no article points at) can exist in that collision case. Load front matter through `article.frontmatter_cid`. Do not treat a directory listing of `frontmatter/` as the document list.
 
 ### Body rewrite
 
@@ -166,21 +166,21 @@ The same link written twice in one document is one backlink. Two aliases to the 
 
 `from_name` is the source document's display title: front matter `title` when that value is a non-empty string after trimming, otherwise the source `name`.
 
-### Manifest
+### Directory
 
-`manifest.json` is `{"documents":[...]}`. Each entry is `title`, `uuid`, and `path`, in that order. `path` is `relativePath`. `title` is the same display title as `from_name`. Entries are sorted by `path`, then `uuid`, as raw bytes. The array is present and empty when nothing is published. It is never `null`.
+`directory.json` is `{"documents":[...]}`. Each entry is `title`, `uuid`, and `path`, in that order. `path` is `relativePath`. `title` is the same display title as `from_name`. Entries are sorted by `path`, then `uuid`, as raw bytes. The array is present and empty when nothing is published. It is never `null`.
 
-Duplicate UUIDs stay as separate rows. The manifest describes the files that were scanned, after the share filter.
+Duplicate UUIDs stay as separate rows. `directory.json` describes the files that were scanned, after the share filter.
 
 ### Write mechanics
 
 The writer creates `<site>/`, `articles/`, `frontmatter/`, `assets/`, and `backlinks/` even when a directory ends up empty. Each file is written by a temp file in the same directory followed by a rename, so a reader does not see a partial JSON file. A file whose bytes already match is left untouched.
 
-`-prune` defaults to true. It deletes regular files in `articles/`, `frontmatter/`, and `assets/` that are not part of this run, and it deletes regular `*.json` files in `backlinks/` whose stem is not a published UUID. It does not delete subdirectories, symlinks, or files that sit next to `manifest.json`. `-prune=false` leaves stale files in place. A renderer should follow the manifest and the article CIDs, not a raw directory listing.
+`-prune` defaults to true. It deletes regular files in `articles/`, `frontmatter/`, and `assets/` that are not part of this run, and it deletes regular `*.json` files in `backlinks/` whose stem is not a published UUID. It does not delete subdirectories, symlinks, or files that sit next to `directory.json`. `-prune=false` leaves stale files in place. A renderer should follow `directory.json` and the article CIDs, not a raw directory listing.
 
 ## File formats
 
-### `manifest.json`
+### `directory.json`
 
 ```json
 {
@@ -289,7 +289,7 @@ On top of that, interpret the constructs the publisher either rewrote or deliber
 
 ### Name index
 
-Walk `manifest.documents` in order (it is already sorted by path). For each row, derive `name` as the last path segment with its final extension removed (`a/b/post.md` → `post`). Map `name` → `uuid`, overwriting. The last row wins, which is the greatest path. That matches the publisher's resolution.
+Walk `directory.json`'s `documents` in order (it is already sorted by path). For each row, derive `name` as the last path segment with its final extension removed (`a/b/post.md` → `post`). Map `name` → `uuid`, overwriting. The last row wins, which is the greatest path. That matches the publisher's resolution.
 
 Also keep `path` → `uuid` if the renderer wants to recognize author-written markdown links. The publisher does not require that. It does require name resolution for the wikilinks it left behind.
 
@@ -338,7 +338,7 @@ Apply these rules to the published string.
 - If the target has any other extension, it is an asset reference that did not resolve (missing or ambiguous). There is no file to fetch. Show the alias or the target.
 - `#section` and `alias` mean the same thing as on a document wikilink. `alias` is display text, not a file name.
 
-**Ordinary markdown link.** `[text](destination)` with any other destination, including a vault path (`notes/other.md`), an absolute path (`/books/ikigai`), or a fragment. The publisher stored it as written and did not attach a UUID. Render it as a normal markdown link. Mapping `destination` onto `manifest.path` is an optional extra, not part of the contract.
+**Ordinary markdown link.** `[text](destination)` with any other destination, including a vault path (`notes/other.md`), an absolute path (`/books/ikigai`), or a fragment. The publisher stored it as written and did not attach a UUID. Render it as a normal markdown link. Mapping `destination` onto a `path` in `directory.json` is an optional extra, not part of the contract.
 
 **Inline tag.** `#name` in running text. The publisher does not emit a tag directory. Leaving the hash as text is a correct rendering. A renderer that builds a tag index must scan bodies itself. Do not treat the front matter `tags` field as that same index. The publisher's own notion of an inline tag, if the renderer wants to match it: not inside a fence or inline code, not a heading (`# Heading` has a space), not an all-digit body (`#1984`), and the `#` is not a continuation of a word, a wikilink section, or a URL fragment. Case is preserved. Matching this exactly is optional.
 
@@ -349,12 +349,12 @@ For chrome (the window title, the catalog row, the backlink label), use this ord
 1. Front matter `title`, when it is a string and is not empty after trimming.
 2. `article.name`.
 
-That is the string the manifest already stores as `title`, and the string backlinks store as `from_name`. Prefer the manifest value for catalog rows so the renderer does not fetch every front matter file to paint the index.
+That is the string `directory.json` already stores as `title`, and the string backlinks store as `from_name`. Prefer the `directory.json` value for catalog rows so the renderer does not fetch every front matter file to paint the index.
 
 ## Worked join
 
 ```
-GET <site>/manifest.json
+GET <site>/directory.json
   → documents[].uuid = 123e4567-e89b-12d3-a456-426614174000
   → documents[].title = "First Post"
   → documents[].path = "a/b/post.md"
@@ -374,7 +374,7 @@ GET <site>/backlinks/123e4567-e89b-12d3-a456-426614174000.json
   → backlinks[].from_document_id opens another article
 ```
 
-`[[other-note]]` opens whichever manifest row, after last-path-wins, has the derived name `other-note`.
+`[[other-note]]` opens whichever `directory.json` row, after last-path-wins, has the derived name `other-note`.
 
 ## What the tree does not contain
 
@@ -411,4 +411,4 @@ A complete published document always has `articles/<uuid>.json` and `backlinks/<
 | `-force`, `-F` | Skip unreadable front matter instead of aborting. Those files are absent. |
 | `-prune` | Default true. Drop regular files in the four subdirectories that this run did not write. |
 
-The renderer does not need to know which flags were used. The manifest is the published set either way. `share: false` inside a front matter file means the publisher was run with `-include-unshared` (or the field was true at publish time and the renderer is looking at a stale note). Do not hide a manifest entry because `share` is false. The publisher already decided.
+The renderer does not need to know which flags were used. `directory.json` is the published set either way. `share: false` inside a front matter file means the publisher was run with `-include-unshared` (or the field was true at publish time and the renderer is looking at a stale note). Do not hide a `directory.json` entry because `share` is false. The publisher already decided.

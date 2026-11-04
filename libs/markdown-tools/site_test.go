@@ -56,9 +56,9 @@ func TestWriteSite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !res.ManifestWritten {
-		t.Error("expected to write manifest.json")
+		t.Error("expected to write directory.json")
 	}
-	if _, err := os.Stat(filepath.Join(out, "manifest.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(out, "directory.json")); err != nil {
 		t.Fatal(err)
 	}
 	article, err := os.ReadFile(filepath.Join(out, "articles", "aaa.json"))

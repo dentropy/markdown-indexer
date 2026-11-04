@@ -1316,7 +1316,7 @@ func TestRunWithSiteDir(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Errorf("-site-dir should not write stdout: %s", stdout.String())
 	}
-	if _, err := os.Stat(filepath.Join(out, "manifest.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(out, "directory.json")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(out, "articles", "aaa.json")); err != nil {
