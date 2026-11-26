@@ -25,6 +25,14 @@ of its own. Each module has its own README with the details.
 go install github.com/dentropy/markdown-indexer/libs/markdown-tools-cli@latest
 ```
 
+Set `share: true` on every document in a folder. `-dir` is that folder, and the walk is recursive:
+
+```sh
+markdown-tools-cli -dir notes/public -setshare -share=true
+```
+
+`-share=false` clears the permission. Both commands also add a UUID where one is missing, and they update documents that are currently unshared. `-initfrontmatter -share=true` only fills a missing `share` key and leaves an existing value alone. Details are in the [CLI README](libs/markdown-tools-cli/README.md#writing-front-matter).
+
 ## Use the indexer
 
 ```sh

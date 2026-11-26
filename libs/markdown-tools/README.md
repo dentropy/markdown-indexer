@@ -78,6 +78,16 @@ without a UUID gets one. Existing UUIDs and all other front matter are kept. A
 file whose share value already means the requested permission is not rewritten,
 so repeating the call is safe.
 
+From the CLI, point `-dir` at the folder and pass `-setshare` with the value:
+
+```sh
+markdown-tools-cli -dir notes/public -setshare -share=true
+```
+
+`-share=false` clears it. The CLI sees every matched file before its share
+filter, so this updates documents that are currently unshared. See the
+[CLI README](../markdown-tools-cli/README.md#writing-front-matter).
+
 ### Repair duplicate UUIDs
 
 ```go

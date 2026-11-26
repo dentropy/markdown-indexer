@@ -147,8 +147,10 @@ A second run should print `nothing to fix` and leave the bytes alone.
 #### Writing front matter
 
 Both write modes modify files in place, so use a scratch copy. `-initfrontmatter`
-fills gaps without touching existing values; `-setshare` forces the permission
-and still adds missing UUIDs.
+fills gaps without touching existing values; `-setshare -share=true` or
+`-share=false` sets the permission on every matched document and still adds
+missing UUIDs. The write runs before the share filter, so unshared files are
+included without `-include-unshared`.
 
 ``` bash
 cp -r testdata/vault /tmp/frontmatter-scratch
@@ -156,10 +158,14 @@ cp -r testdata/vault /tmp/frontmatter-scratch
 # Add missing uuid/share; only files with front matter can be read without -force.
 ./markdown-tools-cli -dir /tmp/frontmatter-scratch -initfrontmatter -force -q > /dev/null
 
+# Set share: true on the folder, recursively.
+./markdown-tools-cli -dir /tmp/frontmatter-scratch -setshare -share=true -force -q > /dev/null
+
 # Force every matched document private, recursively.
 ./markdown-tools-cli -dir /tmp/frontmatter-scratch -setshare -share=false -force -q > /dev/null
 
 # Every document is private now, so the default share filter loads nothing.
+# The files on disk were still updated. -include-unshared would print them.
 ./markdown-tools-cli -dir /tmp/frontmatter-scratch -force | jq 'length'
 ```
 

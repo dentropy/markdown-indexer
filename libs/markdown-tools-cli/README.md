@@ -81,8 +81,8 @@ export VAULT_DIR=`~/Vault`
 # May require -f for force
 ./markdown-tools-cli -dir $VAULT_DIR -initfrontmatter -f
 
-# Set all documents to in the directory to be shared
-./markdown-tools-cli -dir $VAULT_DIR share true
+# Set share: true on every document in the directory, recursively.
+./markdown-tools-cli -dir $VAULT_DIR -setshare -share=true
 
 # Get the markdown directory as a JSON Struct
 ./markdown-tools-cli -dir $VAULT_DIR
@@ -117,9 +117,9 @@ export VAULT_DIR=`~/Vault`
 | `-validate`| `false`    | Report broken front matter and duplicate/missing UUIDs          |
 | `-check-duplicates` | `false`    | Report documents sharing a UUID, after writing the index       |
 | `-fix-duplicates` | `false`    | Assign a fresh UUID to every document sharing one (prompts)    |
-| `-initfrontmatter` | `false` | Add missing `uuid` and `share` keys; `share` defaults to `false` |
-| `-setshare`  | `false`    | Set `share` on every matched document and add missing UUIDs; requires `-share` |
-| `-share`     | *(unset)*  | `true` or `false`, used by `-initfrontmatter` and `-setshare`  |
+| `-initfrontmatter` | `false` | Add missing `uuid` and `share` keys. Existing values stay. Missing `share` defaults to `false`; `-share=true` fills only missing keys |
+| `-setshare`  | `false`    | Set `share` on every matched document under `-dir` and add missing UUIDs. Requires `-share=true` or `-share=false` |
+| `-share`     | *(unset)*  | `true` or `false`. With `-setshare`, written on every document. With `-initfrontmatter`, used only when `share` is missing |
 | `-force`/`-F`| `false`    | Skip documents with broken front matter instead of aborting    |
 | `-quiet`/`-q`| `false`    | Print only the JSON, with no progress notices on stderr        |
 | `-memusage`  | `false`    | Print an estimate of the memory the document slice occupies    |
@@ -145,6 +145,12 @@ The structural commands mostly ignore the lens: `-validate` and `-fix-duplicates
 operate on the whole vault, so CI still sees problems in documents that are not
 shared. `-check-duplicates` is the exception: it reports on what was indexed, so it
 needs `-include-unshared` to see unshared documents.
+
+`-initfrontmatter` and `-setshare` also rewrite every matched file before this
+filter runs. Marking a folder shared is `-dir` pointed at that folder plus
+`-setshare -share=true`; the write already includes documents whose `share` is
+missing or false. `-include-unshared` only widens the JSON printed after the
+write. `-setshare -share=false` updates the files and then prints `{}`.
 
 ## Backlinks
 
@@ -291,7 +297,27 @@ files.
 ## Writing front matter
 
 Two flags add or change front matter in place. Both walk every markdown file the
-scan matches (`-glob`, recursively by default) under `-dir`.
+scan matches (`-glob`, recursively by default) under `-dir`. `-dir` is the
+folder the write applies to. To mark one folder shared:
+
+```sh
+./markdown-tools-cli -dir notes/public -setshare -share=true
+```
+
+`-setshare` writes the `-share` value onto every matched document and adds a
+UUID where one is missing. Existing UUIDs and the rest of each file's front
+matter stay as they are. `-share` is required and accepts `true` or `false`
+(anything `strconv.ParseBool` accepts).
+
+```sh
+# Set share: false on every document under notes/, recursively.
+./markdown-tools-cli -dir notes -setshare -share=false
+```
+
+The rewrite runs before the share filter, so a document whose `share` is
+missing or false is updated along with the rest. `-include-unshared` only
+widens the JSON printed after the write. `-setshare -share=false` changes the
+files and then prints `{}`.
 
 `-initfrontmatter` adds what is missing and leaves existing values alone:
 
@@ -299,31 +325,20 @@ scan matches (`-glob`, recursively by default) under `-dir`.
 # Give every document a UUID and share: false if it is missing either.
 ./markdown-tools-cli -dir notes -initfrontmatter
 
-# Same, but missing share keys become true. Existing share values stay put.
+# Same, but a missing share key becomes true. An existing share value stays put.
 ./markdown-tools-cli -dir notes -initfrontmatter -share=true
 ```
 
-`-setshare` forces the permission and still fills in missing UUIDs. Existing
-UUIDs and the rest of each file's front matter are preserved:
-
-```sh
-# Set share: false on every document under notes/, recursively.
-./markdown-tools-cli -dir notes -setshare -share=false
-
-# Set share: true on a single folder.
-./markdown-tools-cli -dir notes/public -setshare -share=true
-```
-
-`-share` takes `true` or `false` (anything `strconv.ParseBool` accepts). It is
-required with `-setshare`; with `-initfrontmatter` it only decides which value
-missing share keys get. The write modes are mutually exclusive with each other
-and with `-fix-duplicates`.
+With `-initfrontmatter`, `-share` supplies the value for a missing `share` key.
+A document that already has `share` is left alone. The write modes are mutually
+exclusive with each other and with `-fix-duplicates` and `-fix-frontmatter`.
 
 Writes are immediate and unconfirmed: run bulk changes on a copy or from version
-control. Files whose bytes would not change are not rewritten, so repeating a
-command is safe. Broken front matter follows the usual rule: the first bad file
-aborts the run unless `-force` is passed, in which case it is skipped. After the
-rewrite the CLI rescans the vault and writes JSON as usual.
+control. A file that would not change is left byte-for-byte alone, so repeating
+a command is safe. The first file with broken
+front matter aborts the run; `-force` skips it. After the rewrite the CLI
+rescans and writes JSON as usual. `-quiet` hides the `updated front matter`
+lines and still prints that JSON.
 
 ## Document JSON list
 

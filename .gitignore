@@ -2,5 +2,7 @@ libs/*/markdown-tools-cli
 libs/*/markdown-indexer-cli
 libs/*/out.json
 libs/*/graph.json
+libs/markdown-tools-cli/mememaps.net
+libs/markdown-tools-cli/sites
 go.work
 go.work.sum
