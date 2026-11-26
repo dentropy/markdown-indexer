@@ -116,7 +116,7 @@ markdown-tools-cli -dir ./notes -site-dir ./site
 ```
 
 ```
-site/manifest.json
+site/directory.json
 site/articles/<uuid>.json
 site/frontmatter/<cid>.json
 site/assets/<sha256>.<ext>

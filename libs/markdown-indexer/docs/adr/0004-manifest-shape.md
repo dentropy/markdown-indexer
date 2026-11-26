@@ -10,7 +10,7 @@ The document index already holds every one of these values. A separate shape is
 worth having because the index is keyed by UUID and carries bodies, front matter,
 and content addresses, so a consumer that only needs to resolve an identifier to
 a readable name and location cannot use it without carrying the vault. The
-manifest is the file to publish at a fixed path such as `site/manifest.json`;
+manifest is the file to publish at a fixed path such as `site/directory.json`;
 the index is not.
 
 Four decisions shape it:

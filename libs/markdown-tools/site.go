@@ -175,7 +175,7 @@ func WriteFrontMatter(docs []markdownindexer.Document, dir string, opts WriteOpt
 }
 
 // WriteSite publishes docs and ix.Assets into dir as the static JSON tree:
-// manifest.json, articles/, frontmatter/, assets/, backlinks/. Asset links in
+// directory.json, articles/, frontmatter/, assets/, backlinks/. Asset links in
 // published article bodies are rewritten. Only assets that resolve from a
 // published document are copied.
 func WriteSite(docs []markdownindexer.Document, assets []markdownindexer.Asset, vault, dir string, opts WriteOptions) (SiteResult, error) {
@@ -200,7 +200,7 @@ func WriteSite(docs []markdownindexer.Document, assets []markdownindexer.Asset, 
 		return res, fmt.Errorf("create site directory: %w", err)
 	}
 
-	wrote, err := WriteManifestFile(markdownindexer.BuildManifest(docs), filepath.Join(dir, "manifest.json"))
+	wrote, err := WriteManifestFile(markdownindexer.BuildManifest(docs), filepath.Join(dir, "directory.json"))
 	if err != nil {
 		return res, err
 	}
